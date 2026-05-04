@@ -17,10 +17,14 @@ async function start() {
   const { errorHandler } = await import('./middleware/errorHandler.js');
 
   const app = express();
-  const PORT = process.env.PORT || 3001;
+  // Puerto 5173: mismo que usaba el dev server de Vite, para mantener la URL habitual
+  const PORT = process.env.PORT || 5173;
 
   app.use(cors());
   app.use(express.json({ limit: '5mb' }));
+
+  // Health-check endpoint para monitoreo
+  app.get('/health', (req, res) => res.json({ status: 'ok', app: 'OrderFlow', uptime: process.uptime() }));
 
   app.use('/api/quotes', quotesRouter);
   app.use('/api/orders', ordersRouter);
@@ -37,10 +41,17 @@ async function start() {
 
   app.use(errorHandler);
 
-  // Bind to 0.0.0.0 for Railway/cloud deployment
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`\n🚀 OrderFlow API running on port ${PORT}\n`);
+    console.log(`\n🚀 OrderFlow running → http://localhost:${PORT}/dashboard\n`);
   });
 }
+
+// Manejo robusto de errores para evitar caídas silenciosas
+process.on('uncaughtException', (err) => {
+  console.error('❌ [OrderFlow] Error no capturado:', err.message);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('❌ [OrderFlow] Promise rechazada:', reason);
+});
 
 start().catch(err => { console.error('Failed to start:', err); process.exit(1); });
