@@ -1,0 +1,13 @@
+{
+  "name": "orderflow",
+  "version": "1.0.0",
+  "description": "OrderFlow — ERP para gestión de órdenes de ropa corporativa",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "install:all": "cd frontend && npm install && cd ../backend && npm install",
+    "build": "cd frontend && npm run build",
+    "start": "cd backend && node src/index.js",
+    "dev": "cd backend && npm run dev"
+  }
+}
