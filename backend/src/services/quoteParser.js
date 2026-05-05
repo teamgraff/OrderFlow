@@ -21,7 +21,8 @@ export function parseQuote(rawText) {
   };
 
   // Try different parsing strategies in order of specificity
-  result.items = tryParseTabular(lines)
+  result.items = tryParseTeamGraffQuote(rawText)
+    || tryParseTabular(lines)
     || tryParseStructuredList(lines)
     || tryParseFreeText(lines)
     || [];
@@ -29,12 +30,160 @@ export function parseQuote(rawText) {
   return result;
 }
 
+// ── Strategy 0: TeamGraff Quote Format ──────────────────────────────────────
+// Handles the specific format from TeamGraff PDF quotes where text comes as
+// a continuous string with numbered products followed by "Cantidad Talla" blocks.
+//
+// Example pattern:
+// 1 MICROPOLAR PRACTICAL LINE HOMBRE M/L 03007 Azulino FRENTE SUPERIOR IZQUIERDO BOLSILLO
+// Cantidad Talla  1   XXL 1   L  2   $ 4.590   $ 9.180
+// 2 CAMISA OXFORD CLASSIC M/L HOMBRE 55% ALG 45% POLY 06012 Celeste ...
+
+function tryParseTeamGraffQuote(rawText) {
+  // Check if this looks like a TeamGraff quote
+  if (!rawText.includes('Cantidad Talla') && !rawText.includes('TENEMOS EL AGRADO')) {
+    return null;
+  }
+
+  const items = [];
+
+  // Split by product number pattern: digit(s) followed by product name in caps
+  // Pattern: look for numbered entries like "1 PRODUCT NAME CODE Color..."
+  // followed by "Cantidad Talla" blocks with size/quantity pairs
+  
+  // First, find all product blocks
+  // Each block starts with a number and ends before the next number or "Subtotal"
+  const productPattern = /(\d+)\s+([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ\s\/%.0-9]+?)\s+(\d{4,6})\s+([A-Za-záéíóúñÑ\s]+?)\s+(?:FRENTE|ESPALDA|PECHO|MANGA|CUELLO|SIN LOGO|BOLSILLO|SUPERIOR|INFERIOR|IZQUIERDO|DERECHO|LOGO|ESTAMPADO|BORDADO|SUBLIMADO).*?Cantidad\s+Talla\s+((?:\d+\s+[A-Z0-9]+\s*)+)\s+(\d+)\s+\$\s*([\d.,]+)\s+\$\s*([\d.,]+)/gi;
+
+  let match;
+  while ((match = productPattern.exec(rawText)) !== null) {
+    const productName = match[2].trim();
+    const sku = match[3].trim();
+    const color = match[4].trim();
+    const sizesBlock = match[5].trim();
+    const unitPrice = parseChileanNumber(match[7]);
+
+    // Parse size/quantity pairs from "1   XXL 1   L" format
+    const sizePattern = /(\d+)\s+([A-Z0-9]{1,4})/gi;
+    let sizeMatch;
+    while ((sizeMatch = sizePattern.exec(sizesBlock)) !== null) {
+      const qty = parseInt(sizeMatch[1]);
+      const size = sizeMatch[2].toUpperCase();
+      if (qty > 0 && ['XXS','XS','S','M','L','XL','XXL','XXXL','2XL','3XL','4XL'].includes(size)) {
+        items.push({
+          product_name: productName,
+          sku: sku,
+          color: color,
+          size: size,
+          quantity: qty,
+          unit_price: unitPrice,
+        });
+      }
+    }
+  }
+
+  // If the complex regex didn't work, try a simpler approach
+  if (items.length === 0) {
+    return tryParseTeamGraffSimple(rawText);
+  }
+
+  return items.length > 0 ? items : null;
+}
+
+// Simpler TeamGraff parser: find "Cantidad Talla" blocks and work backwards for product info
+function tryParseTeamGraffSimple(rawText) {
+  const items = [];
+  
+  // Split by "Cantidad Talla" to get product blocks
+  const parts = rawText.split(/Cantidad\s+Talla/i);
+  
+  if (parts.length < 2) return null;
+  
+  for (let i = 0; i < parts.length - 1; i++) {
+    const beforeBlock = parts[i]; // Contains product info
+    const afterBlock = parts[i + 1]; // Contains sizes, quantities, prices
+    
+    // Extract product name: look for the last numbered product line before "Cantidad Talla"
+    // Pattern: number + PRODUCT NAME IN CAPS + 5-digit SKU + Color
+    const productMatch = beforeBlock.match(/(\d+)\s+([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ\s\/%.0-9]+?)\s+(\d{4,6})\s+([A-Za-záéíóúñÑ]+(?:\s+[A-Za-záéíóúñÑ]+)?)\s/);
+    
+    if (!productMatch) continue;
+    
+    const productName = productMatch[2].trim();
+    const sku = productMatch[3];
+    const color = productMatch[4].trim();
+    
+    // Extract sizes and quantities from after block
+    // Pattern: pairs of "quantity size" like "1 XXL 1 L" followed by total, unit price, subtotal
+    // Find the size/qty pairs before the price pattern "$ X.XXX"
+    const priceStart = afterBlock.search(/\d+\s+\$\s*[\d.,]+/);
+    const sizesText = priceStart > 0 ? afterBlock.substring(0, priceStart) : afterBlock.substring(0, 50);
+    
+    // Extract unit price
+    const priceMatch = afterBlock.match(/\$\s*([\d.,]+)\s+\$\s*([\d.,]+)/);
+    const unitPrice = priceMatch ? parseChileanNumber(priceMatch[1]) : 0;
+    
+    // Parse size-quantity pairs
+    const sizeQtyPattern = /(\d+)\s+(XXS|XS|S|M|L|XL|XXL|XXXL|2XL|3XL|4XL)\b/gi;
+    let sizeMatch;
+    let foundSizes = false;
+    
+    while ((sizeMatch = sizeQtyPattern.exec(sizesText)) !== null) {
+      const qty = parseInt(sizeMatch[1]);
+      const size = sizeMatch[2].toUpperCase();
+      if (qty > 0 && qty < 1000) {
+        items.push({
+          product_name: productName,
+          sku: sku,
+          color: color,
+          size: size,
+          quantity: qty,
+          unit_price: unitPrice,
+        });
+        foundSizes = true;
+      }
+    }
+    
+    // If no sizes found, add as single item with total quantity
+    if (!foundSizes) {
+      const totalQtyMatch = afterBlock.match(/^\s*(\d+)\s+\$/);
+      items.push({
+        product_name: productName,
+        sku: sku,
+        color: color,
+        size: '',
+        quantity: totalQtyMatch ? parseInt(totalQtyMatch[1]) : 1,
+        unit_price: unitPrice,
+      });
+    }
+  }
+  
+  return items.length > 0 ? items : null;
+}
+
+// Parse Chilean number format: "4.590" -> 4590, "31.200" -> 31200
+function parseChileanNumber(str) {
+  if (!str) return 0;
+  const cleaned = str.replace(/\./g, '').replace(/,/g, '.').replace(/[^0-9.]/g, '');
+  return parseFloat(cleaned) || 0;
+}
+
+
 // ── Client Extraction ───────────────────────────────────────────────────────
 
 function extractClient(lines, rawText) {
-  // Look for "Cliente:", "Razón Social:", "Empresa:", "Señor(es):", "Para:"
+  // TeamGraff PDFs: find "Nombre :" entries and return the client one (not TeamGraff itself)
+  const nombreMatches = [...rawText.matchAll(/Nombre\s*:\s*(.+?)(?=\s+Correo|\s+Rut|\s+Contacto|\s+Direccion)/gi)];
+  for (const m of nombreMatches) {
+    const name = m[1].trim().replace(/[-]+$/, '').trim();
+    if (!/teamgraff|team\s*graff/i.test(name) && name.length > 2) {
+      return name;
+    }
+  }
+
+  // Generic patterns: "Cliente:", "Razón Social:", "Empresa:", etc.
   const clientPatterns = [
-    /(?:cliente|razón\s*social|empresa|señor(?:es)?|para|destinatario|rut)\s*[:]\s*(.+)/i,
+    /(?:cliente|razón\s*social|empresa|señor(?:es)?|para|destinatario)\s*[:]\s*(.+)/i,
     /(?:cotizaci[oó]n\s+(?:para|a))\s+(.+)/i,
   ];
 
@@ -42,7 +191,8 @@ function extractClient(lines, rawText) {
     for (const pattern of clientPatterns) {
       const match = line.match(pattern);
       if (match) {
-        return match[1].trim().replace(/[.\-_]+$/, '').trim();
+        const name = match[1].trim().replace(/[.\-_]+$/, '').trim();
+        if (name.length > 2) return name;
       }
     }
   }
