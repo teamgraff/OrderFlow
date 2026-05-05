@@ -47,8 +47,8 @@ function tryParseTeamGraffQuote(rawText) {
   // Known position keywords that appear between color and "Cantidad Talla"
   const positionKeywords = '(?:AL\\s+)?(?:FRENTE|ESPALDA|PECHO|MANGA|CUELLO|SIN\\s*LOGO|BOLSILLO|SUPERIOR|INFERIOR|IZQUIERDO|DERECHO|PIERNA|TAPETA|COSTADO|LATERAL|BRAZO|HOMBRO)';
 
-  // Known color names (Spanish)
-  const colorNames = 'NEGRO|BLANCO|AZUL\\s*MARINO|AZUL|ROJO|VERDE|GRIS|NAVY|BEIGE|CELESTE|BURDEO|AMARILLO|NARANJO|AZULINO|CAFE|MORADO|ROSADO|CORAL|TURQUESA|FUCSIA|CRUDO|PIEDRA|KHAKI|VINO|CHOCOLATE|PLOMO';
+  // Known color names (Spanish) - includes compound colors like Naranja/Gris
+  const colorNames = 'NEGRO|BLANCO|AZUL\\s*MARINO|AZUL|ROJO|VERDE|GRIS(?:\\s*OSCURO)?|NAVY|BEIGE|CELESTE|BURDEO|AMARILLO|NARANJO|NARANJA(?:/[A-Za-z]+)?|AZULINO|CAFE|MORADO|ROSADO|CORAL|TURQUESA|FUCSIA|CRUDO|PIEDRA|KHAKI|VINO|CHOCOLATE|PLOMO';
 
   for (let i = 0; i < parts.length - 1; i++) {
     const beforeBlock = parts[i];
@@ -119,15 +119,30 @@ function tryParseTeamGraffQuote(rawText) {
     color = color.replace(/\s*(AL\s+)?(?:FRENTE|ESPALDA|PECHO|MANGA|CUELLO|BOLSILLO|SUPERIOR|INFERIOR|IZQUIERDO|DERECHO)\s*/gi, ' ').trim();
 
     // ── Extract sizes, quantities and prices from afterBlock ──
-    // Format: "  1   L 2   XL  3   $ 11.444   $ 34.332 LOGO BORDADO..."
+    // Format with prices: "  1   L 2   XL  3   $ 11.444   $ 34.332 LOGO BORDADO..."
+    // Format without prices: "  1   L   1   $ LOGO BORDADO NALCO"
 
-    // Find price pattern: total_qty  $ unit_price  $ subtotal
+    // Try price pattern: total_qty  $ unit_price  $ subtotal
     const priceMatch = afterBlock.match(/(\d+)\s+\$\s*([\d.,]+)\s+\$\s*([\d.,]+)/);
     const unitPrice = priceMatch ? parseChileanNumber(priceMatch[2]) : 0;
 
-    // Get text before price (contains size/qty pairs)
-    const pricePos = priceMatch ? afterBlock.indexOf(priceMatch[0]) : -1;
-    const sizesText = pricePos > 0 ? afterBlock.substring(0, pricePos).trim() : '';
+    // Get text that contains size/qty pairs
+    let sizesText = '';
+    if (priceMatch) {
+      // Has numeric prices — sizes are before the price block
+      const pricePos = afterBlock.indexOf(priceMatch[0]);
+      sizesText = pricePos > 0 ? afterBlock.substring(0, pricePos).trim() : '';
+    } else {
+      // No numeric prices — sizes are before the first "$" or "LOGO" or next product number
+      const dollarPos = afterBlock.indexOf('$');
+      const logoPos = afterBlock.search(/LOGO|BORDADO|NALCO|-LOGO/i);
+      const endPos = Math.min(
+        dollarPos > 0 ? dollarPos : 999,
+        logoPos > 0 ? logoPos : 999,
+        100 // max reasonable length for sizes block
+      );
+      sizesText = afterBlock.substring(0, endPos).trim();
+    }
 
     // Try standard letter sizes first: "1   L 2   XL"
     const validSizes = ['XXS','XS','S','M','L','XL','XXL','XXXL','2XL','3XL','4XL'];
@@ -192,16 +207,30 @@ function tryParseTeamGraffQuote(rawText) {
       }
     }
 
-    // Fallback: use total quantity from price line
-    if (!foundSizes && priceMatch) {
-      items.push({
-        product_name: productName,
-        sku: sku,
-        color: color,
-        size: '',
-        quantity: parseInt(priceMatch[1]) || 1,
-        unit_price: unitPrice,
-      });
+    // Fallback: use total quantity
+    if (!foundSizes) {
+      // Try to find total qty from price line, or from "N   $" pattern, or from "No hay datos.   N"
+      let totalQty = 0;
+      if (priceMatch) {
+        totalQty = parseInt(priceMatch[1]) || 1;
+      } else {
+        // Look for "N   $" pattern (qty before dollar sign)
+        const qtyDollar = afterBlock.match(/(\d+)\s+\$/);
+        if (qtyDollar) totalQty = parseInt(qtyDollar[1]) || 1;
+        // Or "No hay datos.   N   $"
+        const noDataQty = afterBlock.match(/No hay datos\.\s+(\d+)\s+\$/i);
+        if (noDataQty) totalQty = parseInt(noDataQty[1]) || 1;
+      }
+      if (totalQty > 0) {
+        items.push({
+          product_name: productName,
+          sku: sku,
+          color: color,
+          size: '',
+          quantity: totalQty,
+          unit_price: unitPrice,
+        });
+      }
     }
   }
 
