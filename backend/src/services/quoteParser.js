@@ -45,7 +45,7 @@ function tryParseTeamGraffQuote(rawText) {
   if (parts.length < 2) return null;
 
   // Known position keywords that appear between color and "Cantidad Talla"
-  const positionKeywords = 'FRENTE|ESPALDA|PECHO|MANGA|CUELLO|SIN\\s*LOGO|BOLSILLO|SUPERIOR|INFERIOR|IZQUIERDO|DERECHO';
+  const positionKeywords = '(?:AL\\s+)?(?:FRENTE|ESPALDA|PECHO|MANGA|CUELLO|SIN\\s*LOGO|BOLSILLO|SUPERIOR|INFERIOR|IZQUIERDO|DERECHO)';
 
   // Known color names (Spanish)
   const colorNames = 'NEGRO|BLANCO|AZUL\\s*MARINO|AZUL|ROJO|VERDE|GRIS|NAVY|BEIGE|CELESTE|BURDEO|AMARILLO|NARANJO|AZULINO|CAFE|MORADO|ROSADO|CORAL|TURQUESA|FUCSIA|CRUDO|PIEDRA|KHAKI|VINO|CHOCOLATE|PLOMO';
@@ -112,8 +112,8 @@ function tryParseTeamGraffQuote(rawText) {
     productName = productName.replace(/\s+/g, ' ').replace(/[\s\-}]+$/, '').trim();
     if (!productName || productName.length < 3) continue;
     
-    // Clean color: remove position keywords that may have leaked in
-    color = color.replace(/\s*(FRENTE|ESPALDA|PECHO|MANGA|CUELLO|BOLSILLO|SUPERIOR|INFERIOR|IZQUIERDO|DERECHO)\s*/gi, ' ').trim();
+    // Clean color: remove position keywords and "AL" prefix that may have leaked in
+    color = color.replace(/\s*(AL\s+)?(?:FRENTE|ESPALDA|PECHO|MANGA|CUELLO|BOLSILLO|SUPERIOR|INFERIOR|IZQUIERDO|DERECHO)\s*/gi, ' ').trim();
 
     // ── Extract sizes, quantities and prices from afterBlock ──
     // Format: "  1   L 2   XL  3   $ 11.444   $ 34.332 LOGO BORDADO..."
@@ -126,7 +126,7 @@ function tryParseTeamGraffQuote(rawText) {
     const pricePos = priceMatch ? afterBlock.indexOf(priceMatch[0]) : -1;
     const sizesText = pricePos > 0 ? afterBlock.substring(0, pricePos).trim() : '';
 
-    // Parse "1   L 2   XL" pairs
+    // Try standard letter sizes first: "1   L 2   XL"
     const validSizes = ['XXS','XS','S','M','L','XL','XXL','XXXL','2XL','3XL','4XL'];
     const sizeQtyPattern = /(\d+)\s+(XXS|XS|S|M|L|XL|XXL|XXXL|2XL|3XL|4XL)\b/gi;
     let sizeMatch;
@@ -145,6 +145,47 @@ function tryParseTeamGraffQuote(rawText) {
           unit_price: unitPrice,
         });
         foundSizes = true;
+      }
+    }
+
+    // If no letter sizes found, try numeric tallas: "3 Talla 40", "9 talla 48", "3 T50", "3 T54"
+    if (!foundSizes) {
+      const numericSizePattern = /(\d+)\s+(?:talla\s*)?(\d{2,3})\b/gi;
+      const tPrefixPattern = /(\d+)\s+T(\d{2,3})\b/gi;
+      
+      let numMatch;
+      // Pattern: "3   Talla 40" or "3   talla 42"
+      while ((numMatch = numericSizePattern.exec(sizesText)) !== null) {
+        const qty = parseInt(numMatch[1]);
+        const size = numMatch[2];
+        if (qty > 0 && qty < 1000 && parseInt(size) >= 28 && parseInt(size) <= 60) {
+          items.push({
+            product_name: productName,
+            sku: sku,
+            color: color,
+            size: size,
+            quantity: qty,
+            unit_price: unitPrice,
+          });
+          foundSizes = true;
+        }
+      }
+      
+      // Pattern: "3   T50" or "3   T54"
+      while ((numMatch = tPrefixPattern.exec(sizesText)) !== null) {
+        const qty = parseInt(numMatch[1]);
+        const size = numMatch[2];
+        if (qty > 0 && qty < 1000 && parseInt(size) >= 28 && parseInt(size) <= 60) {
+          items.push({
+            product_name: productName,
+            sku: sku,
+            color: color,
+            size: size,
+            quantity: qty,
+            unit_price: unitPrice,
+          });
+          foundSizes = true;
+        }
       }
     }
 
