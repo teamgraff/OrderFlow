@@ -45,7 +45,7 @@ function tryParseTeamGraffQuote(rawText) {
   if (parts.length < 2) return null;
 
   // Known position keywords that appear between color and "Cantidad Talla"
-  const positionKeywords = '(?:AL\\s+)?(?:FRENTE|ESPALDA|PECHO|MANGA|CUELLO|SIN\\s*LOGO|BOLSILLO|SUPERIOR|INFERIOR|IZQUIERDO|DERECHO)';
+  const positionKeywords = '(?:AL\\s+)?(?:FRENTE|ESPALDA|PECHO|MANGA|CUELLO|SIN\\s*LOGO|BOLSILLO|SUPERIOR|INFERIOR|IZQUIERDO|DERECHO|PIERNA|TAPETA|COSTADO|LATERAL|BRAZO|HOMBRO)';
 
   // Known color names (Spanish)
   const colorNames = 'NEGRO|BLANCO|AZUL\\s*MARINO|AZUL|ROJO|VERDE|GRIS|NAVY|BEIGE|CELESTE|BURDEO|AMARILLO|NARANJO|AZULINO|CAFE|MORADO|ROSADO|CORAL|TURQUESA|FUCSIA|CRUDO|PIEDRA|KHAKI|VINO|CHOCOLATE|PLOMO';
@@ -60,16 +60,19 @@ function tryParseTeamGraffQuote(rawText) {
 
     // Try Pattern A: number + NAME + numeric SKU + Color + POSITION
     // "1 CAMISA OXFORD CLASSIC C/BOL. M/L HOMBRE 06212 Celeste FRENTE..."
+    // Product number boundary: after BORDADO/price text, or Total header, or space
+    const boundary = '(?:^|.*(?:BORDADO|APLICACION|\\$[\\d.,]+|Total)\\s+|.*\\s)';
     const patternA = new RegExp(
-      '(?:^|.*\\s)(\\d+)\\s+([A-Z][A-Za-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1\u00d1\\s/.%0-9]+?)\\s+(\\d{4,6})\\s+([A-Za-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1\u00d1][A-Za-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1\u00d1\\s]*)\\s+(?:' + positionKeywords + ')',
+      boundary + '(\\d{1,2})\\s+([A-Z][A-Za-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1\u00d1\\s/.%0-9]+?)\\s+(\\d{4,6})\\s+([A-Za-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1\u00d1][A-Za-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1\u00d1\\s]*)\\s+(?:' + positionKeywords + ')',
       'i'
     );
     const matchA = beforeBlock.match(patternA);
 
     // Try Pattern B: number + Name + COLOR_NAME + POSITION (no numeric SKU)
     // "2 Polera Cuello Pique Dryfresh Manga Larga Hombre AZUL MARINO FRENTE..."
+    // "5 Parka 3 En 1 Desmontable Hombre- Modelo Basic NEGRO FRENTE..."
     const patternB = new RegExp(
-      '(?:^|.*\\s)(\\d+)\\s+([A-Za-z][A-Za-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1\u00d1\\s/.%0-9-]+?)\\s+(' + colorNames + ')(?:\\s+(?:OSCURO|CLARO|MELANGE))?\\s+(?:' + positionKeywords + ')',
+      boundary + '(\\d{1,2})\\s+([A-Za-z][A-Za-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1\u00d1\\s/.%0-9(),-]+?)\\s+(' + colorNames + ')(?:\\s+(?:OSCURO|CLARO|MELANGE))?\\s+(?:' + positionKeywords + ')',
       'i'
     );
     const matchB = beforeBlock.match(patternB);
@@ -85,7 +88,7 @@ function tryParseTeamGraffQuote(rawText) {
     } else {
       // Pattern C: very flexible - just find numbered entry before position text
       const patternC = new RegExp(
-        '(?:^|.*\\s)(\\d+)\\s+(.{5,100}?)\\s+(?:' + positionKeywords + ')', 'i'
+        boundary + '(\\d{1,2})\\s+(.{5,100}?)\\s+(?:' + positionKeywords + ')', 'i'
       );
       const matchC = beforeBlock.match(patternC);
       if (matchC) {
