@@ -31,107 +31,111 @@ export function parseQuote(rawText) {
 }
 
 // ── Strategy 0: TeamGraff Quote Format ──────────────────────────────────────
-// Handles the specific format from TeamGraff PDF quotes where text comes as
-// a continuous string with numbered products followed by "Cantidad Talla" blocks.
-//
-// Example pattern:
-// 1 MICROPOLAR PRACTICAL LINE HOMBRE M/L 03007 Azulino FRENTE SUPERIOR IZQUIERDO BOLSILLO
-// Cantidad Talla  1   XXL 1   L  2   $ 4.590   $ 9.180
-// 2 CAMISA OXFORD CLASSIC M/L HOMBRE 55% ALG 45% POLY 06012 Celeste ...
+// Splits by "Cantidad Talla" markers, then extracts product info before each
+// marker and size/qty/price data after it.
 
 function tryParseTeamGraffQuote(rawText) {
-  // Check if this looks like a TeamGraff quote
   if (!rawText.includes('Cantidad Talla') && !rawText.includes('TENEMOS EL AGRADO')) {
     return null;
   }
 
   const items = [];
+  const parts = rawText.split(/Cantidad\s+Talla/i);
 
-  // Split by product number pattern: digit(s) followed by product name in caps
-  // Pattern: look for numbered entries like "1 PRODUCT NAME CODE Color..."
-  // followed by "Cantidad Talla" blocks with size/quantity pairs
-  
-  // First, find all product blocks
-  // Each block starts with a number and ends before the next number or "Subtotal"
-  const productPattern = /(\d+)\s+([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ\s\/%.0-9]+?)\s+(\d{4,6})\s+([A-Za-záéíóúñÑ\s]+?)\s+(?:FRENTE|ESPALDA|PECHO|MANGA|CUELLO|SIN LOGO|BOLSILLO|SUPERIOR|INFERIOR|IZQUIERDO|DERECHO|LOGO|ESTAMPADO|BORDADO|SUBLIMADO).*?Cantidad\s+Talla\s+((?:\d+\s+[A-Z0-9]+\s*)+)\s+(\d+)\s+\$\s*([\d.,]+)\s+\$\s*([\d.,]+)/gi;
+  if (parts.length < 2) return null;
 
-  let match;
-  while ((match = productPattern.exec(rawText)) !== null) {
-    const productName = match[2].trim();
-    const sku = match[3].trim();
-    const color = match[4].trim();
-    const sizesBlock = match[5].trim();
-    const unitPrice = parseChileanNumber(match[7]);
+  // Known position keywords that appear between color and "Cantidad Talla"
+  const positionKeywords = 'FRENTE|ESPALDA|PECHO|MANGA|CUELLO|SIN\\s*LOGO|BOLSILLO|SUPERIOR|INFERIOR|IZQUIERDO|DERECHO';
 
-    // Parse size/quantity pairs from "1   XXL 1   L" format
-    const sizePattern = /(\d+)\s+([A-Z0-9]{1,4})/gi;
-    let sizeMatch;
-    while ((sizeMatch = sizePattern.exec(sizesBlock)) !== null) {
-      const qty = parseInt(sizeMatch[1]);
-      const size = sizeMatch[2].toUpperCase();
-      if (qty > 0 && ['XXS','XS','S','M','L','XL','XXL','XXXL','2XL','3XL','4XL'].includes(size)) {
-        items.push({
-          product_name: productName,
-          sku: sku,
-          color: color,
-          size: size,
-          quantity: qty,
-          unit_price: unitPrice,
-        });
+  // Known color names (Spanish)
+  const colorNames = 'NEGRO|BLANCO|AZUL\\s*MARINO|AZUL|ROJO|VERDE|GRIS|NAVY|BEIGE|CELESTE|BURDEO|AMARILLO|NARANJO|AZULINO|CAFE|MORADO|ROSADO|CORAL|TURQUESA|FUCSIA|CRUDO|PIEDRA|KHAKI|VINO|CHOCOLATE|PLOMO';
+
+  for (let i = 0; i < parts.length - 1; i++) {
+    const beforeBlock = parts[i];
+    const afterBlock = parts[i + 1];
+
+    let productName = '';
+    let sku = '';
+    let color = '';
+
+    // Try Pattern A: number + NAME + numeric SKU + Color + POSITION
+    // "1 CAMISA OXFORD CLASSIC C/BOL. M/L HOMBRE 06212 Celeste FRENTE..."
+    const patternA = new RegExp(
+      '(?:^|.*\\s)(\\d+)\\s+([A-Z][A-Za-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1\u00d1\\s/.%0-9]+?)\\s+(\\d{4,6})\\s+([A-Za-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1\u00d1][A-Za-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1\u00d1\\s]*)\\s+(?:' + positionKeywords + ')',
+      'i'
+    );
+    const matchA = beforeBlock.match(patternA);
+
+    // Try Pattern B: number + Name + COLOR_NAME + POSITION (no numeric SKU)
+    // "2 Polera Cuello Pique Dryfresh Manga Larga Hombre AZUL MARINO FRENTE..."
+    const patternB = new RegExp(
+      '(?:^|.*\\s)(\\d+)\\s+([A-Za-z][A-Za-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1\u00d1\\s/.%0-9-]+?)\\s+(' + colorNames + ')(?:\\s+(?:OSCURO|CLARO|MELANGE))?\\s+(?:' + positionKeywords + ')',
+      'i'
+    );
+    const matchB = beforeBlock.match(patternB);
+
+    if (matchA) {
+      productName = matchA[2].trim();
+      sku = matchA[3];
+      color = matchA[4].trim();
+    } else if (matchB) {
+      productName = matchB[2].trim();
+      sku = '';
+      color = matchB[3].trim();
+    } else {
+      // Pattern C: very flexible - just find numbered entry before position text
+      const patternC = new RegExp(
+        '(?:^|.*\\s)(\\d+)\\s+(.{5,100}?)\\s+(?:' + positionKeywords + ')', 'i'
+      );
+      const matchC = beforeBlock.match(patternC);
+      if (matchC) {
+        productName = matchC[2].trim();
+        // Try to extract color from end of product name
+        const colorAtEnd = new RegExp('(.+?)\\s+(' + colorNames + ')(?:\\s+(?:OSCURO|CLARO|MELANGE))?\\s*$', 'i');
+        const colorSplit = productName.match(colorAtEnd);
+        if (colorSplit) {
+          productName = colorSplit[1].trim();
+          color = colorSplit[2].trim();
+        }
+        // Try to extract SKU from end of product name
+        const skuAtEnd = productName.match(/^(.+?)\s+(\d{4,6})\s*$/);
+        if (skuAtEnd) {
+          productName = skuAtEnd[1].trim();
+          sku = skuAtEnd[2];
+        }
+      } else {
+        continue;
       }
     }
-  }
 
-  // If the complex regex didn't work, try a simpler approach
-  if (items.length === 0) {
-    return tryParseTeamGraffSimple(rawText);
-  }
+    // Clean product name: remove extra spaces, trailing junk
+    productName = productName.replace(/\s+/g, ' ').replace(/[\s\-}]+$/, '').trim();
+    if (!productName || productName.length < 3) continue;
+    
+    // Clean color: remove position keywords that may have leaked in
+    color = color.replace(/\s*(FRENTE|ESPALDA|PECHO|MANGA|CUELLO|BOLSILLO|SUPERIOR|INFERIOR|IZQUIERDO|DERECHO)\s*/gi, ' ').trim();
 
-  return items.length > 0 ? items : null;
-}
+    // ── Extract sizes, quantities and prices from afterBlock ──
+    // Format: "  1   L 2   XL  3   $ 11.444   $ 34.332 LOGO BORDADO..."
 
-// Simpler TeamGraff parser: find "Cantidad Talla" blocks and work backwards for product info
-function tryParseTeamGraffSimple(rawText) {
-  const items = [];
-  
-  // Split by "Cantidad Talla" to get product blocks
-  const parts = rawText.split(/Cantidad\s+Talla/i);
-  
-  if (parts.length < 2) return null;
-  
-  for (let i = 0; i < parts.length - 1; i++) {
-    const beforeBlock = parts[i]; // Contains product info
-    const afterBlock = parts[i + 1]; // Contains sizes, quantities, prices
-    
-    // Extract product name: look for the last numbered product line before "Cantidad Talla"
-    // Pattern: number + PRODUCT NAME IN CAPS + 5-digit SKU + Color
-    const productMatch = beforeBlock.match(/(\d+)\s+([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ\s\/%.0-9]+?)\s+(\d{4,6})\s+([A-Za-záéíóúñÑ]+(?:\s+[A-Za-záéíóúñÑ]+)?)\s/);
-    
-    if (!productMatch) continue;
-    
-    const productName = productMatch[2].trim();
-    const sku = productMatch[3];
-    const color = productMatch[4].trim();
-    
-    // Extract sizes and quantities from after block
-    // Pattern: pairs of "quantity size" like "1 XXL 1 L" followed by total, unit price, subtotal
-    // Find the size/qty pairs before the price pattern "$ X.XXX"
-    const priceStart = afterBlock.search(/\d+\s+\$\s*[\d.,]+/);
-    const sizesText = priceStart > 0 ? afterBlock.substring(0, priceStart) : afterBlock.substring(0, 50);
-    
-    // Extract unit price
-    const priceMatch = afterBlock.match(/\$\s*([\d.,]+)\s+\$\s*([\d.,]+)/);
-    const unitPrice = priceMatch ? parseChileanNumber(priceMatch[1]) : 0;
-    
-    // Parse size-quantity pairs
+    // Find price pattern: total_qty  $ unit_price  $ subtotal
+    const priceMatch = afterBlock.match(/(\d+)\s+\$\s*([\d.,]+)\s+\$\s*([\d.,]+)/);
+    const unitPrice = priceMatch ? parseChileanNumber(priceMatch[2]) : 0;
+
+    // Get text before price (contains size/qty pairs)
+    const pricePos = priceMatch ? afterBlock.indexOf(priceMatch[0]) : -1;
+    const sizesText = pricePos > 0 ? afterBlock.substring(0, pricePos).trim() : '';
+
+    // Parse "1   L 2   XL" pairs
+    const validSizes = ['XXS','XS','S','M','L','XL','XXL','XXXL','2XL','3XL','4XL'];
     const sizeQtyPattern = /(\d+)\s+(XXS|XS|S|M|L|XL|XXL|XXXL|2XL|3XL|4XL)\b/gi;
     let sizeMatch;
     let foundSizes = false;
-    
+
     while ((sizeMatch = sizeQtyPattern.exec(sizesText)) !== null) {
       const qty = parseInt(sizeMatch[1]);
       const size = sizeMatch[2].toUpperCase();
-      if (qty > 0 && qty < 1000) {
+      if (qty > 0 && qty < 1000 && validSizes.includes(size)) {
         items.push({
           product_name: productName,
           sku: sku,
@@ -143,21 +147,20 @@ function tryParseTeamGraffSimple(rawText) {
         foundSizes = true;
       }
     }
-    
-    // If no sizes found, add as single item with total quantity
-    if (!foundSizes) {
-      const totalQtyMatch = afterBlock.match(/^\s*(\d+)\s+\$/);
+
+    // Fallback: use total quantity from price line
+    if (!foundSizes && priceMatch) {
       items.push({
         product_name: productName,
         sku: sku,
         color: color,
         size: '',
-        quantity: totalQtyMatch ? parseInt(totalQtyMatch[1]) : 1,
+        quantity: parseInt(priceMatch[1]) || 1,
         unit_price: unitPrice,
       });
     }
   }
-  
+
   return items.length > 0 ? items : null;
 }
 
@@ -167,7 +170,6 @@ function parseChileanNumber(str) {
   const cleaned = str.replace(/\./g, '').replace(/,/g, '.').replace(/[^0-9.]/g, '');
   return parseFloat(cleaned) || 0;
 }
-
 
 // ── Client Extraction ───────────────────────────────────────────────────────
 
@@ -181,10 +183,10 @@ function extractClient(lines, rawText) {
     }
   }
 
-  // Generic patterns: "Cliente:", "Razón Social:", "Empresa:", etc.
+  // Generic patterns: "Cliente:", "Razon Social:", "Empresa:", etc.
   const clientPatterns = [
-    /(?:cliente|razón\s*social|empresa|señor(?:es)?|para|destinatario)\s*[:]\s*(.+)/i,
-    /(?:cotizaci[oó]n\s+(?:para|a))\s+(.+)/i,
+    /(?:cliente|raz\u00f3n\s*social|empresa|se\u00f1or(?:es)?|para|destinatario)\s*[:]\s*(.+)/i,
+    /(?:cotizaci[o\u00f3]n\s+(?:para|a))\s+(.+)/i,
   ];
 
   for (const line of lines) {
@@ -275,8 +277,8 @@ function detectColumns(headers) {
   };
 
   headers.forEach((h, i) => {
-    if (/^(sku|c[oó]digo|cod|ref|art[ií]culo|item)$/i.test(h)) map.sku = i;
-    else if (/^(producto|descripci[oó]n|prenda|nombre|detalle|item)$/i.test(h)) map.product = i;
+    if (/^(sku|c[o\u00f3]digo|cod|ref|art[i\u00ed]culo|item)$/i.test(h)) map.sku = i;
+    else if (/^(producto|descripci[o\u00f3]n|prenda|nombre|detalle|item)$/i.test(h)) map.product = i;
     else if (/^(color|col)$/i.test(h)) map.color = i;
     else if (/^(talla|talle|size|tam|medida)$/i.test(h)) map.size = i;
     else if (/^(cantidad|cant|qty|unid|unidades|pcs)$/i.test(h)) map.quantity = i;
@@ -303,7 +305,7 @@ function extractItemFromCells(cells, colMap) {
 
 // ── Strategy 2: Structured List ─────────────────────────────────────────────
 // Lines like:
-//   - Polera Piqué / SKU: TN-001 / Color: Negro / Tallas: S(5), M(10), L(8)
+//   - Polera Piqu\u00e9 / SKU: TN-001 / Color: Negro / Tallas: S(5), M(10), L(8)
 //   - 10 x Camisa Oxford Azul, talla M, SKU: CS-200
 
 function tryParseStructuredList(lines) {
@@ -314,14 +316,14 @@ function tryParseStructuredList(lines) {
     if (/^(cliente|empresa|cotizaci|fecha|total|neto|iva|subtotal|rut|nota|observ)/i.test(line)) continue;
 
     // Pattern: has SKU-like code and quantity somewhere
-    const skuMatch = line.match(/(?:sku|c[oó]d(?:igo)?|ref|art)\s*[:.]?\s*([A-Z0-9][\w-]+)/i);
-    const colorMatch = line.match(/(?:color)\s*[:.]?\s*([A-Za-zÁÉÍÓÚáéíóúñÑ\s]+?)(?:\s*[/,|]|$)/i);
-    const qtyMatch = line.match(/(?:cant(?:idad)?|qty|unid(?:ades)?)\s*[:.]?\s*(\d+)/i)
-      || line.match(/^[-•*]\s*(\d+)\s*[xX×]\s*/);
+    const skuMatch = line.match(/(?:sku|c[o\u00f3]d(?:igo)?|ref|art)\s*[:.]\s*([A-Z0-9][\w-]+)/i);
+    const colorMatch = line.match(/(?:color)\s*[:.]\s*([A-Za-z\u00c1\u00c9\u00cd\u00d3\u00da\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1\u00d1\s]+?)(?:\s*[/,|]|$)/i);
+    const qtyMatch = line.match(/(?:cant(?:idad)?|qty|unid(?:ades)?)\s*[:.]\s*(\d+)/i)
+      || line.match(/^[-\u2022*]\s*(\d+)\s*[xX\u00d7]\s*/);
 
     // Tallas pattern: S(5), M(10), L(8) or talla: M or tallas: S,M,L
-    const tallasExpandedMatch = line.match(/(?:tallas?)\s*[:.]?\s*((?:[A-Z0-9XS]+\s*\(\s*\d+\s*\)\s*[,;]?\s*)+)/i);
-    const tallaSimpleMatch = line.match(/(?:talla|talle|size)\s*[:.]?\s*([A-Z0-9XS]+)/i);
+    const tallasExpandedMatch = line.match(/(?:tallas?)\s*[:.]\s*((?:[A-Z0-9XS]+\s*\(\s*\d+\s*\)\s*[,;]?\s*)+)/i);
+    const tallaSimpleMatch = line.match(/(?:talla|talle|size)\s*[:.]\s*([A-Z0-9XS]+)/i);
 
     if (tallasExpandedMatch) {
       // Multiple sizes with quantities: S(5), M(10), L(8)
@@ -352,14 +354,14 @@ function tryParseStructuredList(lines) {
 }
 
 function extractProductName(line) {
-  // Remove common prefixes (-, *, •, numbers)
-  let cleaned = line.replace(/^[-•*]\s*/, '').replace(/^\d+\s*[xX×]\s*/, '');
+  // Remove common prefixes (-, *, \u2022, numbers)
+  let cleaned = line.replace(/^[-\u2022*]\s*/, '').replace(/^\d+\s*[xX\u00d7]\s*/, '');
   // Take first segment before / or |
   cleaned = cleaned.split(/[/|]/)[0].trim();
   // Remove SKU references
-  cleaned = cleaned.replace(/\b(?:sku|c[oó]d(?:igo)?|ref)\s*[:.]?\s*[A-Z0-9][\w-]*/gi, '').trim();
+  cleaned = cleaned.replace(/\b(?:sku|c[o\u00f3]d(?:igo)?|ref)\s*[:.]\s*[A-Z0-9][\w-]*/gi, '').trim();
   // Remove quantity refs
-  cleaned = cleaned.replace(/\b(?:cant(?:idad)?|qty|unid(?:ades)?)\s*[:.]?\s*\d+/gi, '').trim();
+  cleaned = cleaned.replace(/\b(?:cant(?:idad)?|qty|unid(?:ades)?)\s*[:.]\s*\d+/gi, '').trim();
   // Clean trailing punctuation
   cleaned = cleaned.replace(/[,;:\-/|]+$/, '').trim();
 
