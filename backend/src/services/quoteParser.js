@@ -278,20 +278,32 @@ function extractClient(lines, rawText) {
 // ── Net Value Extraction ────────────────────────────────────────────────────
 
 function extractNetValue(lines, rawText) {
-  // Look for "Total Neto:", "Valor Neto:", "Subtotal:", "NETO:", "Total:"
-  const valuePatterns = [
-    /(?:total\s*neto|valor\s*neto|neto|subtotal|total)\s*[:$]\s*\$?\s*([\d.,]+)/i,
+  // Search in raw text first (PDF text is often one continuous string)
+  // Pattern: "Total Neto   $ 579.290.-" or "Total Neto: $579.290"
+  const rawPatterns = [
+    /total\s*neto\s*[:.]?\s*\$?\s*([\d.,]+)/i,
+    /valor\s*neto\s*[:.]?\s*\$?\s*([\d.,]+)/i,
+    /neto\s*[:.]?\s*\$?\s*([\d.,]+)/i,
+    /subtotal\s*[:.]?\s*\$?\s*([\d.,]+)/i,
   ];
 
+  for (const pattern of rawPatterns) {
+    const match = rawText.match(pattern);
+    if (match) {
+      // Remove trailing ".-" and parse Chilean number format
+      const numStr = match[1].replace(/\.-$/, '').replace(/\./g, '').replace(/,/g, '.');
+      const value = parseFloat(numStr);
+      if (!isNaN(value) && value > 0) return value;
+    }
+  }
+
+  // Fallback: search line by line
   for (const line of lines) {
-    for (const pattern of valuePatterns) {
-      const match = line.match(pattern);
-      if (match) {
-        // Parse Chilean number format: 1.234.567 or 1,234,567
-        const numStr = match[1].replace(/\./g, '').replace(/,/g, '.');
-        const value = parseFloat(numStr);
-        if (!isNaN(value)) return value;
-      }
+    const match = line.match(/(?:total\s*neto|valor\s*neto|neto|subtotal)\s*[:$]?\s*\$?\s*([\d.,]+)/i);
+    if (match) {
+      const numStr = match[1].replace(/\.-$/, '').replace(/\./g, '').replace(/,/g, '.');
+      const value = parseFloat(numStr);
+      if (!isNaN(value) && value > 0) return value;
     }
   }
 
