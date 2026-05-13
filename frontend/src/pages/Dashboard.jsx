@@ -20,7 +20,7 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const [orders, setOrders] = useState([]);
   const [stats, setStats] = useState({ total: 0, totalValue: 0, pending: 0, overdue: 0, warning: 0, completed: 0 });
-  const [filters, setFilters] = useState({ status: '', client: '', month: '', logo_technique: '', delivery_status: '' });
+  const [filters, setFilters] = useState({ status: '', search: '', month: '', logo_technique: '', delivery_status: '' });
   const [loading, setLoading] = useState(true);
 
   const fetchData = async () => {
@@ -95,7 +95,7 @@ export default function Dashboard() {
 
       {/* Filters */}
       <div className="filter-bar">
-        <input className="form-input" placeholder="Buscar cliente..." value={filters.client} onChange={e => setFilters(f => ({ ...f, client: e.target.value }))} onKeyDown={e => e.key === 'Enter' && handleSearch()} style={{ minWidth: '200px' }} />
+        <input className="form-input" placeholder="Buscar por cliente o N° OT..." value={filters.search} onChange={e => setFilters(f => ({ ...f, search: e.target.value }))} onKeyDown={e => e.key === 'Enter' && handleSearch()} style={{ minWidth: '220px' }} />
         <select className="form-select" value={filters.status} onChange={e => setFilters(f => ({ ...f, status: e.target.value }))}>
           <option value="">Todos los estados</option>
           <option value="pending">Pendiente</option>

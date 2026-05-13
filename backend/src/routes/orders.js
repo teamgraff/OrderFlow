@@ -13,13 +13,14 @@ function enrichOrder(order) {
 }
 
 router.get('/', (req, res) => {
-  const { status, client, month, supplier_id, logo_technique, delivery_status } = req.query;
+  const { status, search, client, month, supplier_id, logo_technique, delivery_status } = req.query;
   let sql = `SELECT o.*, s.name as supplier_name FROM orders o LEFT JOIN suppliers s ON o.supplier_id = s.id WHERE 1=1`;
   const params = [];
   if (status) { sql += ` AND o.status = ?`; params.push(status); }
   if (logo_technique) { sql += ` AND o.logo_technique = ?`; params.push(logo_technique); }
   if (delivery_status) { sql += ` AND o.delivery_status = ?`; params.push(delivery_status); }
-  if (client) { sql += ` AND o.client_name LIKE ?`; params.push(`%${client}%`); }
+  const searchTerm = search || client;
+  if (searchTerm) { sql += ` AND (o.client_name LIKE ? OR o.custom_ot LIKE ?)`; params.push(`%${searchTerm}%`, `%${searchTerm}%`); }
   if (month) { sql += ` AND strftime('%Y-%m', o.created_at) = ?`; params.push(month); }
   if (supplier_id) { sql += ` AND o.supplier_id = ?`; params.push(Number(supplier_id)); }
   sql += ` ORDER BY o.created_at DESC`;
