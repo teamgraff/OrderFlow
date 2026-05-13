@@ -20,7 +20,7 @@ router.get('/', (req, res) => {
   if (logo_technique) { sql += ` AND o.logo_technique = ?`; params.push(logo_technique); }
   if (delivery_status) { sql += ` AND o.delivery_status = ?`; params.push(delivery_status); }
   const searchTerm = search || client;
-  if (searchTerm) { sql += ` AND (o.client_name LIKE ? OR o.custom_ot LIKE ?)`; params.push(`%${searchTerm}%`, `%${searchTerm}%`); }
+  if (searchTerm) { sql += ` AND (o.client_name LIKE ? OR o.custom_ot LIKE ? OR CAST(o.id AS TEXT) = ?)`; params.push(`%${searchTerm}%`, `%${searchTerm}%`, searchTerm.trim()); }
   if (month) { sql += ` AND strftime('%Y-%m', o.created_at) = ?`; params.push(month); }
   if (supplier_id) { sql += ` AND o.supplier_id = ?`; params.push(Number(supplier_id)); }
   sql += ` ORDER BY o.created_at DESC`;
