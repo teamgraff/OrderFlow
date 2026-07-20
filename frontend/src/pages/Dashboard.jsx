@@ -26,9 +26,19 @@ export default function Dashboard() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [ordersData, statsData] = await Promise.all([api.getOrders(filters), api.getOrderStats()]);
+      const ordersData = await api.getOrders(filters);
       setOrders(ordersData);
-      setStats(statsData);
+      // Compute stats from the filtered orders so they reflect active filters
+      let pending = 0, overdue = 0, warning = 0, completed = 0, totalValue = 0;
+      for (const o of ordersData) {
+        totalValue += Number(o.net_value) || 0;
+        const vs = o.visual_status;
+        if (vs === 'red') overdue++;
+        else if (vs === 'yellow') warning++;
+        else if (vs === 'green') completed++;
+        else pending++;
+      }
+      setStats({ total: ordersData.length, totalValue, pending, overdue, warning, completed });
     } catch (err) {
       console.error(err);
     } finally {
