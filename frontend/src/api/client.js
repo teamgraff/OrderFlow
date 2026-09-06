@@ -45,4 +45,6 @@ export const api = {
   deleteSupplier: (id) => request(`/suppliers/${id}`, { method: 'DELETE' }),
 
   exportExcel: () => `${BASE}/dashboard/export`,
+  exportWeeklyPlanning: () => `${BASE}/dashboard/export-weekly`,
+  exportNextWeek: () => `${BASE}/dashboard/export-next-week`,
 };

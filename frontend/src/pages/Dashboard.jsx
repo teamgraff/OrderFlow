@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Package, DollarSign, Clock, AlertTriangle, Download, Search, Eye } from 'lucide-react';
+import { Package, DollarSign, Clock, AlertTriangle, Download, Search, Eye, ClipboardList, CalendarClock } from 'lucide-react';
 import { api } from '../api/client';
 
 const STATUS_MAP = {
@@ -59,6 +59,14 @@ export default function Dashboard() {
     window.open(api.exportExcel(), '_blank');
   };
 
+  const handleExportWeekly = () => {
+    window.open(api.exportWeeklyPlanning(), '_blank');
+  };
+
+  const handleExportNextWeek = () => {
+    window.open(api.exportNextWeek(), '_blank');
+  };
+
   return (
     <div className="animate-fade-up">
       <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -66,9 +74,17 @@ export default function Dashboard() {
           <h2>Dashboard</h2>
           <p>Resumen general de órdenes de compra</p>
         </div>
-        <button className="btn btn-secondary" onClick={handleExport}>
-          <Download size={16} /> Exportar Excel
-        </button>
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <button className="btn btn-primary" onClick={handleExportNextWeek}>
+            <CalendarClock size={16} /> Próxima Semana
+          </button>
+          <button className="btn btn-secondary" onClick={handleExportWeekly}>
+            <ClipboardList size={16} /> Planificación Completa
+          </button>
+          <button className="btn btn-secondary" onClick={handleExport}>
+            <Download size={16} /> Exportar Excel
+          </button>
+        </div>
       </div>
 
       {/* Stats */}

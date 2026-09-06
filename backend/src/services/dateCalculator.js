@@ -144,6 +144,28 @@ export function getBusinessDaysRemaining(deadline, fromDate = null) {
 }
 
 /**
+ * Get the calendar date range (Monday–Friday) of the week following the current week.
+ * @param {string|Date} [fromDate] - Optional "today" date for testing
+ * @returns {{ start: string, end: string }} Next Monday and next Friday as YYYY-MM-DD
+ */
+export function getNextWeekRange(fromDate = null) {
+  const from = fromDate
+    ? (typeof fromDate === 'string' ? new Date(fromDate + 'T12:00:00') : new Date(fromDate))
+    : new Date();
+  from.setHours(12, 0, 0, 0);
+
+  const dayOfWeek = from.getDay(); // 0 = Sunday .. 6 = Saturday
+  const daysUntilNextMonday = ((8 - dayOfWeek) % 7) || 7;
+
+  const nextMonday = new Date(from);
+  nextMonday.setDate(from.getDate() + daysUntilNextMonday);
+  const nextFriday = new Date(nextMonday);
+  nextFriday.setDate(nextMonday.getDate() + 4);
+
+  return { start: formatDate(nextMonday), end: formatDate(nextFriday) };
+}
+
+/**
  * Determine the visual status of an order based on its deadline.
  * @param {object} order - Order with deadline and status fields
  * @returns {'green'|'yellow'|'red'|'pending'} Visual status
