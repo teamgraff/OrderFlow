@@ -3,7 +3,10 @@ import * as XLSX from 'xlsx';
 export function generateExcelBuffer(orders) {
   const data = orders.map(o => ({
     'ID': o.id,
+    'N° OF': o.of_number ? `OF-${String(o.of_number).padStart(4, '0')}` : '',
+    'N° OT': o.custom_ot || '',
     'Cliente': o.client_name,
+    'RUT': o.client_rut || '',
     'Fecha Cotización': o.quote_date || '',
     'Fecha Pago': o.payment_date || '',
     'Fecha Límite': o.deadline || '',
@@ -13,11 +16,13 @@ export function generateExcelBuffer(orders) {
     'Valor Neto': o.net_value || 0,
     '% Utilidad': o.profit_margin || 0,
     'Notas': o.notes || '',
+    'Origen': o.source === 'sync' ? 'Teamgraff (automático)' : 'Manual',
+    'Procesamiento': o.processing_status || '',
   }));
   const ws = XLSX.utils.json_to_sheet(data);
   ws['!cols'] = [
-    { wch: 5 }, { wch: 25 }, { wch: 14 }, { wch: 14 }, { wch: 14 },
-    { wch: 12 }, { wch: 25 }, { wch: 18 }, { wch: 14 }, { wch: 10 }, { wch: 30 },
+    { wch: 5 }, { wch: 9 }, { wch: 8 }, { wch: 25 }, { wch: 13 }, { wch: 14 }, { wch: 14 }, { wch: 14 },
+    { wch: 12 }, { wch: 25 }, { wch: 18 }, { wch: 14 }, { wch: 10 }, { wch: 30 }, { wch: 22 }, { wch: 14 },
   ];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Órdenes');

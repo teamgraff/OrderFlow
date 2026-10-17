@@ -14,6 +14,8 @@ async function start() {
   const { default: ordersRouter } = await import('./routes/orders.js');
   const { default: suppliersRouter } = await import('./routes/suppliers.js');
   const { default: dashboardRouter } = await import('./routes/dashboard.js');
+  const { default: syncRouter } = await import('./routes/sync.js');
+  const { startSyncScheduler } = await import('./sync/scheduler.js');
   const { errorHandler } = await import('./middleware/errorHandler.js');
 
   const app = express();
@@ -30,6 +32,7 @@ async function start() {
   app.use('/api/orders', ordersRouter);
   app.use('/api/suppliers', suppliersRouter);
   app.use('/api/dashboard', dashboardRouter);
+  app.use('/api/sync', syncRouter);
 
   // Serve frontend static files from the built dist folder
   const frontendDist = path.join(__dirname, '..', '..', 'frontend', 'dist');
@@ -43,6 +46,7 @@ async function start() {
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`\n🚀 OrderFlow running → http://localhost:${PORT}/dashboard\n`);
+    startSyncScheduler();
   });
 }
 

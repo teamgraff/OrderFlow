@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Save, Trash2, CheckCircle } from 'lucide-react';
+import { ArrowLeft, Save, Trash2, CheckCircle, RefreshCw } from 'lucide-react';
 import { api } from '../api/client';
+import { formatOf, formatDateTime, ProcessingBadge } from '../components/orderMeta';
 
 const STATUS_MAP = {
   green: { label: 'Terminado', class: 'badge-green' },
@@ -25,7 +26,7 @@ export default function OrderDetail() {
     Promise.all([api.getOrder(id), api.getSuppliers()])
       .then(([o, s]) => {
         setOrder(o);
-        setForm({ custom_ot: o.custom_ot || '', client_name: o.client_name, quote_date: o.quote_date || '', net_value: o.net_value || 0, profit_margin: o.profit_margin || 30, payment_date: o.payment_date || '', supplier_order_number: o.supplier_order_number || '', supplier_id: o.supplier_id || '', logo_technique: o.logo_technique || 'SIN LOGO', delivery_status: o.delivery_status || 'sin_verificar', status: o.status, notes: o.notes || '' });
+        setForm({ custom_ot: o.custom_ot || '', client_name: o.client_name, quote_date: o.quote_date || '', net_value: o.net_value || 0, profit_margin: o.profit_margin || 30, payment_date: o.payment_date || '', supplier_order_number: o.supplier_order_number || '', supplier_id: o.supplier_id || '', logo_technique: o.logo_technique ?? '', delivery_status: o.delivery_status || 'sin_verificar', status: o.status, notes: o.notes || '' });
         setSuppliers(s);
       })
       .catch(err => showToast(err.message, 'error'))
@@ -38,6 +39,27 @@ export default function OrderDetail() {
       setOrder(updated);
       showToast('Orden actualizada');
     } catch (err) { showToast(err.message, 'error'); }
+  };
+
+  const markReviewed = async () => {
+    try {
+      setOrder(await api.updateOrder(id, { processing_status: 'ok' }));
+      showToast('Orden marcada como revisada');
+    } catch (err) { showToast(err.message, 'error'); }
+  };
+
+  const [reprocessing, setReprocessing] = useState(false);
+  const reprocess = async () => {
+    if (!confirm('¿Volver a leer esta OT desde Teamgraff? Se reemplazarán los productos y los datos de la empresa con los de Teamgraff (no cambia valor neto, fecha de pago, proveedor ni estado).')) return;
+    setReprocessing(true);
+    try {
+      await api.reprocessOrder(id);
+      setOrder(await api.getOrder(id));
+      showToast('OT reprocesada desde Teamgraff');
+    } catch (err) {
+      showToast(err.message, 'error');
+      api.getOrder(id).then(setOrder).catch(() => {});
+    } finally { setReprocessing(false); }
   };
 
   const handleDelete = async () => {
@@ -70,7 +92,7 @@ export default function OrderDetail() {
           <button className="btn btn-secondary btn-sm" onClick={() => navigate('/dashboard')} style={{ marginBottom: '0.75rem' }}>
             <ArrowLeft size={14} /> Volver
           </button>
-          <h2>Orden {order.custom_ot ? `OT ${order.custom_ot}` : `#${order.id}`} <span className={`badge ${vs.class}`} style={{ marginLeft: '0.5rem', verticalAlign: 'middle' }}><span className="badge-dot" />{vs.label}</span></h2>
+          <h2>{formatOf(order.of_number)}{order.custom_ot ? ` · OT ${order.custom_ot}` : ''} <span className={`badge ${vs.class}`} style={{ marginLeft: '0.5rem', verticalAlign: 'middle' }}><span className="badge-dot" />{vs.label}</span> <span style={{ verticalAlign: 'middle' }}><ProcessingBadge order={order} /></span></h2>
           <p>{order.client_name} — {order.deadline ? `Fecha límite: ${order.deadline}` : 'Sin fecha límite'}</p>
         </div>
         <div className="flex gap-2">
@@ -80,6 +102,39 @@ export default function OrderDetail() {
           <button className="btn btn-danger btn-sm" onClick={handleDelete}><Trash2 size={14} /> Eliminar</button>
         </div>
       </div>
+
+      {['incompleta', 'pendiente', 'error'].includes(order.processing_status) && (
+        <div className="card" style={{ marginBottom: '1.5rem', borderLeft: `4px solid ${order.processing_status === 'error' ? '#dc2626' : '#f59e0b'}` }}>
+          <h3 className="card-title" style={{ marginBottom: '0.5rem' }}>
+            {order.processing_status === 'incompleta' ? '⚠️ Requiere revisión' : order.processing_status === 'pendiente' ? '⏳ Pendiente de procesar' : '❌ Error al leer desde Teamgraff'}
+          </h3>
+          <p style={{ whiteSpace: 'pre-line', color: 'var(--text-secondary)', marginBottom: '1rem' }}>{order.review_notes || 'Revisar los datos de esta orden.'}</p>
+          <div className="flex gap-2">
+            {order.processing_status === 'incompleta' && (
+              <button className="btn btn-success btn-sm" onClick={markReviewed}><CheckCircle size={14} /> Marcar como revisada</button>
+            )}
+            {order.source === 'sync' && order.teamgraff_ot && (
+              <button className="btn btn-secondary btn-sm" onClick={reprocess} disabled={reprocessing}><RefreshCw size={14} /> {reprocessing ? 'Reprocesando…' : 'Reprocesar desde Teamgraff'}</button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {(order.source === 'sync' || order.client_rut || order.teamgraff_quote) && (
+        <div className="card" style={{ marginBottom: '1.5rem' }}>
+          <h3 className="card-title" style={{ marginBottom: '1rem' }}>Datos de Teamgraff</h3>
+          <div className="form-row">
+            <div className="form-group"><label className="form-label">N° Cotización</label><div>{order.teamgraff_quote || '—'}</div></div>
+            <div className="form-group"><label className="form-label">RUT empresa</label><div>{order.client_rut || '—'}</div></div>
+            <div className="form-group"><label className="form-label">Contacto</label><div>{order.contact_name || '—'}</div></div>
+          </div>
+          <div className="form-row">
+            <div className="form-group"><label className="form-label">Correo</label><div>{order.contact_email || '—'}</div></div>
+            <div className="form-group"><label className="form-label">Origen</label><div>{order.source === 'sync' ? `Importada automáticamente el ${formatDateTime(order.imported_at || order.created_at)}` : 'Ingreso manual'}</div></div>
+            <div className="form-group"></div>
+          </div>
+        </div>
+      )}
 
       <div className="card" style={{ marginBottom: '1.5rem' }}>
         <h3 className="card-title" style={{ marginBottom: '1rem' }}>Datos de la Orden</h3>
@@ -129,6 +184,7 @@ export default function OrderDetail() {
           <div className="form-group">
             <label className="form-label">Técnica de Personalización *</label>
             <select className="form-select" value={form.logo_technique} onChange={e => setForm(f => ({ ...f, logo_technique: e.target.value }))}>
+              {!form.logo_technique && <option value="">— Por definir —</option>}
               <option value="SIN LOGO">SIN LOGO</option>
               <option value="BORDADO">BORDADO</option>
               <option value="ESTAMPADO">ESTAMPADO</option>
@@ -185,19 +241,20 @@ export default function OrderDetail() {
       {/* Items */}
       {order.items && order.items.length > 0 && (
         <div className="card" style={{ marginBottom: '1.5rem' }}>
-          <h3 className="card-title" style={{ marginBottom: '1rem' }}>Productos ({order.items.length})</h3>
+          <h3 className="card-title" style={{ marginBottom: '1rem' }}>Productos ({order.items.length}) · {order.items.reduce((a, i) => a + (Number(i.quantity) || 0), 0)} prendas</h3>
           <div className="table-container">
             <table className="table">
-              <thead><tr><th>Producto</th><th>SKU</th><th>Color</th><th>Talla</th><th>Cantidad</th><th>Precio Unit.</th></tr></thead>
+              <thead><tr><th>Producto</th><th>SKU</th><th>Color</th><th>Talla</th><th>Cantidad</th><th>Precio Unit.</th>{order.items.some(i => i.logo_position || i.notes) && <><th>Posición logo</th><th>Indicaciones</th></>}</tr></thead>
               <tbody>
                 {order.items.map((item, i) => (
                   <tr key={i}>
                     <td>{item.product_name}</td>
                     <td style={{ fontFamily: 'monospace' }}>{item.sku}</td>
                     <td>{item.color}</td>
-                    <td>{item.size}</td>
+                    <td>{item.size || <span style={{ color: '#f59e0b' }} title="Sin talla en la OT">sin talla</span>}</td>
                     <td>{item.quantity}</td>
-                    <td>{formatMoney(item.unit_price)}</td>
+                    <td>{item.unit_price ? formatMoney(item.unit_price) : '—'}</td>
+                    {order.items.some(i => i.logo_position || i.notes) && <><td>{item.logo_position || '—'}{item.logo_size ? ` (${item.logo_size})` : ''}</td><td style={{ whiteSpace: 'normal', maxWidth: 320 }}>{item.notes || '—'}</td></>}
                   </tr>
                 ))}
               </tbody>

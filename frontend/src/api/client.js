@@ -44,6 +44,11 @@ export const api = {
   updateSupplier: (id, data) => request(`/suppliers/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteSupplier: (id) => request(`/suppliers/${id}`, { method: 'DELETE' }),
 
+  getSync: () => request('/sync'),
+  runSync: () => request('/sync/run', { method: 'POST' }),
+  retrySyncIssue: (id) => request(`/sync/issues/${id}/retry`, { method: 'POST' }),
+  reprocessOrder: (id) => request(`/sync/orders/${id}/reprocess`, { method: 'POST' }),
+
   exportExcel: () => `${BASE}/dashboard/export`,
   exportWeeklyPlanning: () => `${BASE}/dashboard/export-weekly`,
   exportNextWeek: () => `${BASE}/dashboard/export-next-week`,

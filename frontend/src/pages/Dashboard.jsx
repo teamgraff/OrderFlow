@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Package, DollarSign, Clock, AlertTriangle, Download, Search, Eye, ClipboardList, CalendarClock } from 'lucide-react';
 import { api } from '../api/client';
+import { formatOf, formatDateTime, ProcessingBadge } from '../components/orderMeta';
 
 const STATUS_MAP = {
   green: { label: 'Terminado', class: 'badge-green', emoji: '🟢' },
@@ -20,13 +21,16 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const [orders, setOrders] = useState([]);
   const [stats, setStats] = useState({ total: 0, totalValue: 0, pending: 0, overdue: 0, warning: 0, completed: 0 });
-  const [filters, setFilters] = useState({ status: '', search: '', month: '', logo_technique: '', delivery_status: '' });
+  const [filters, setFilters] = useState({ status: '', search: '', month: '', logo_technique: '', delivery_status: '', processing: '' });
+  const [lastSync, setLastSync] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchData = async () => {
-    setLoading(true);
+  const fetchData = async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true);
     try {
-      const ordersData = await api.getOrders(filters);
+      const { processing, ...rest } = filters;
+      const params = { ...rest, ...(processing === 'manual' ? { source: 'manual' } : processing ? { processing_status: processing } : {}) };
+      const ordersData = await api.getOrders(params);
       setOrders(ordersData);
       // Compute stats from the filtered orders so they reflect active filters
       let pending = 0, overdue = 0, warning = 0, completed = 0, totalValue = 0;
@@ -46,7 +50,17 @@ export default function Dashboard() {
     }
   };
 
-  useEffect(() => { fetchData(); }, [filters.status, filters.month, filters.logo_technique, filters.delivery_status]);
+  useEffect(() => { fetchData(); }, [filters.status, filters.month, filters.logo_technique, filters.delivery_status, filters.processing]);
+
+  // Las OT importadas automáticamente aparecen sin recargar la página.
+  useEffect(() => {
+    const loadSync = () => api.getSync().then(s => setLastSync(s.enabled ? (s.runs[0] || null) : false)).catch(() => {});
+    loadSync();
+    const t = setInterval(() => { fetchData({ silent: true }); loadSync(); }, 60000);
+    return () => clearInterval(t);
+  }, [filters]);
+
+  const needsReview = orders.filter(o => ['incompleta', 'pendiente', 'error'].includes(o.processing_status)).length;
 
   const handleSearch = () => fetchData();
 
@@ -73,6 +87,11 @@ export default function Dashboard() {
         <div>
           <h2>Dashboard</h2>
           <p>Resumen general de órdenes de compra</p>
+          {lastSync !== null && (
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.25rem', cursor: 'pointer' }} onClick={() => navigate('/sync')}>
+              {lastSync === false ? '⏸️ Sincronización con Teamgraff desactivada' : `🔄 Sincronización con Teamgraff · última revisión ${formatDateTime(lastSync?.finished_at || lastSync?.started_at)}`}
+            </p>
+          )}
         </div>
         <div style={{ display: 'flex', gap: '0.5rem' }}>
           <button className="btn btn-primary" onClick={handleExportNextWeek}>
@@ -119,9 +138,16 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {needsReview > 0 && !filters.processing && (
+        <div className="card" style={{ marginBottom: '1rem', padding: '0.75rem 1rem', borderLeft: '4px solid #f59e0b', cursor: 'pointer' }}
+          onClick={() => setFilters(f => ({ ...f, processing: 'revisar' }))}>
+          ⚠️ <strong>{needsReview}</strong> {needsReview === 1 ? 'orden requiere' : 'órdenes requieren'} revisión (datos incompletos o error al leer desde Teamgraff).
+        </div>
+      )}
+
       {/* Filters */}
       <div className="filter-bar">
-        <input className="form-input" placeholder="Buscar por cliente o N° OT..." value={filters.search} onChange={e => setFilters(f => ({ ...f, search: e.target.value }))} onKeyDown={e => e.key === 'Enter' && handleSearch()} style={{ minWidth: '220px' }} />
+        <input className="form-input" placeholder="Buscar por cliente, N° OT u OF-0000..." value={filters.search} onChange={e => setFilters(f => ({ ...f, search: e.target.value }))} onKeyDown={e => e.key === 'Enter' && handleSearch()} style={{ minWidth: '220px' }} />
         <select className="form-select" value={filters.status} onChange={e => setFilters(f => ({ ...f, status: e.target.value }))}>
           <option value="">Todos los estados</option>
           <option value="pending">Pendiente</option>
@@ -140,6 +166,15 @@ export default function Dashboard() {
           <option value="sin_verificar">Sin verificar</option>
           <option value="completo">Completo</option>
           <option value="con_faltantes">Con faltantes</option>
+        </select>
+        <select className="form-select" value={filters.processing} onChange={e => setFilters(f => ({ ...f, processing: e.target.value }))}>
+          <option value="">Todo origen</option>
+          <option value="revisar">Requieren revisión</option>
+          <option value="ok">Importadas OK</option>
+          <option value="incompleta">Incompletas</option>
+          <option value="pendiente">Pendientes</option>
+          <option value="error">Error de sincronización</option>
+          <option value="manual">Ingreso manual</option>
         </select>
         <input className="form-input" type="month" value={filters.month} onChange={e => setFilters(f => ({ ...f, month: e.target.value }))} />
         <button className="btn btn-secondary btn-sm" onClick={handleSearch}><Search size={14} /> Buscar</button>
@@ -160,12 +195,16 @@ export default function Dashboard() {
             <table className="table">
               <thead>
                 <tr>
-                  <th>N° OT / ID</th>
+                  <th>N° OF</th>
+                  <th>N° OT</th>
                   <th>Cliente</th>
+                  <th>Ingreso</th>
+                  <th>Prendas</th>
                   <th>Técnica</th>
                   <th>Fecha Límite</th>
                   <th>Estado</th>
                   <th>Recepción</th>
+                  <th>Origen</th>
                   <th>Proveedor</th>
                   <th>Valor Neto</th>
                   <th></th>
@@ -177,11 +216,14 @@ export default function Dashboard() {
                   const ds = DELIVERY_MAP[order.delivery_status] || DELIVERY_MAP.sin_verificar;
                   return (
                     <tr key={order.id} className="cursor-pointer" onClick={() => navigate(`/orders/${order.id}`)}>
-                      <td>{order.custom_ot ? <strong>{order.custom_ot}</strong> : <span style={{ color: 'var(--text-muted)' }}>#{order.id}</span>}</td>
+                      <td style={{ whiteSpace: 'nowrap' }}><strong>{formatOf(order.of_number)}</strong></td>
+                      <td>{order.custom_ot ? <strong>{order.custom_ot}</strong> : <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
                       <td style={{ fontWeight: 600 }}>{order.client_name}</td>
+                      <td style={{ whiteSpace: 'nowrap', color: 'var(--text-secondary)' }}>{formatDateTime(order.created_at)}</td>
+                      <td>{order.total_units || '—'}</td>
                       <td>
                         <span style={{ fontSize: '0.85rem', padding: '2px 6px', background: 'var(--bg-secondary)', borderRadius: '4px', whiteSpace: 'nowrap' }}>
-                          {order.logo_technique || 'SIN LOGO'}
+                          {order.logo_technique || '—'}
                         </span>
                       </td>
                       <td>{order.deadline || '—'}</td>
@@ -196,6 +238,7 @@ export default function Dashboard() {
                           {ds.label}
                         </span>
                       </td>
+                      <td><ProcessingBadge order={order} /></td>
                       <td style={{ color: 'var(--text-secondary)' }}>{order.supplier_name || '—'}</td>
                       <td style={{ fontWeight: 600 }}>{formatMoney(order.net_value)}</td>
                       <td>

@@ -6,3 +6,4 @@ frontend/dist
 *.md
 .gitignore
 .env
+backend/data

@@ -28,7 +28,7 @@ export default function NewOrder() {
     try {
       const data = await api.parseQuote(rawText);
       setParsedData(data);
-      setOrderForm(f => ({ ...f, custom_ot: data.quoteNumber || '', client_name: data.client || '', net_value: data.netValue || 0 }));
+      setOrderForm(f => ({ ...f, custom_ot: data.otNumber || '', client_name: data.client || '', net_value: data.netValue || 0 }));
       const supps = await api.getSuppliers();
       setSuppliers(supps);
       setStep(1);
@@ -48,7 +48,8 @@ export default function NewOrder() {
     try {
       const data = await api.uploadQuotePDF(file);
       setParsedData(data);
-      setOrderForm(f => ({ ...f, custom_ot: data.quoteNumber || '', client_name: data.client || '', net_value: data.netValue || 0 }));
+      setRawText(data.rawText || '');
+      setOrderForm(f => ({ ...f, custom_ot: data.otNumber || '', client_name: data.client || '', net_value: data.netValue || 0 }));
       const supps = await api.getSuppliers();
       setSuppliers(supps);
       setStep(1);
@@ -66,6 +67,7 @@ export default function NewOrder() {
     try {
       const result = await api.generateEmails({ items: parsedData.items, client_name: parsedData.client || orderForm.client_name });
       setEmails(result);
+      setOrderForm(f => ({ ...f, client_name: parsedData.client || f.client_name, net_value: parsedData.netValue ?? f.net_value }));
       setStep(2);
     } catch (err) {
       showToast(err.message, 'error');
@@ -265,7 +267,7 @@ export default function NewOrder() {
           <div className="form-row">
             <div className="form-group">
               <label className="form-label">N° OT (Opcional)</label>
-              <input className="form-input" value={orderForm.custom_ot} onChange={e => setOrderForm(f => ({ ...f, custom_ot: e.target.value }))} placeholder="Ej: 8079" />
+              <input className="form-input" value={orderForm.custom_ot} onChange={e => setOrderForm(f => ({ ...f, custom_ot: e.target.value }))} placeholder="Ej: 3706" />
             </div>
             <div className="form-group">
               <label className="form-label">Cliente *</label>

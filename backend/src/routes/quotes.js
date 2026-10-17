@@ -61,10 +61,7 @@ router.post('/upload', upload.single('pdf'), async (req, res) => {
     const result = parseQuote(extractedText);
     result.rawText = extractedText;
     
-    // Debug: log extracted text to file for analysis
-    const debugPath = path.join(uploadsDir, 'last_pdf_text.txt');
-    fs.writeFileSync(debugPath, extractedText, 'utf-8');
-    console.log('📄 PDF text extracted (' + extractedText.length + ' chars), saved to:', debugPath);
+    console.log('📄 PDF text extracted (' + extractedText.length + ' chars)');
 
     res.json(result);
   } catch (err) {

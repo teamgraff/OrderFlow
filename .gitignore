@@ -5,3 +5,6 @@ dist/
 uploads/
 .DS_Store
 Thumbs.db
+
+# Base de datos local y respaldos (datos de clientes; en producción viven en el volumen /data)
+backend/data/

@@ -17,6 +17,9 @@ export function parseQuote(rawText) {
   const result = {
     client: extractClient(lines, rawText),
     netValue: extractNetValue(lines, rawText),
+    // Impresión de la OT de Teamgraff ("Orden de trabajo3706.pdf"): N° de OT y de cotización.
+    otNumber: /N°\s*Orden de trabajo\s+(\d+)/i.exec(rawText)?.[1] ?? null,
+    quoteNumber: /N°\s*Cotizaci[oó]n\s*(\d+)/i.exec(rawText)?.[1] ?? null,
     items: [],
   };
 
@@ -255,6 +258,10 @@ function extractClient(lines, rawText) {
       return name;
     }
   }
+
+  // Impresión de la OT de Teamgraff: "Empresa   76.123.456-7 EMPRESA DEMO SPA.   correo ..."
+  const otEmpresa = /Empresa\s+[\d.]+-[\dkK]\s+(.+?)\s+correo\b/i.exec(rawText);
+  if (otEmpresa && otEmpresa[1].trim().length > 2) return otEmpresa[1].trim();
 
   // Generic patterns: "Cliente:", "Razon Social:", "Empresa:", etc.
   const clientPatterns = [

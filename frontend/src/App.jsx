@@ -1,9 +1,10 @@
 import { BrowserRouter, Routes, Route, NavLink, Navigate } from 'react-router-dom';
-import { LayoutDashboard, PlusCircle, Truck, Package } from 'lucide-react';
+import { LayoutDashboard, PlusCircle, Truck, Package, RefreshCw } from 'lucide-react';
 import Dashboard from './pages/Dashboard';
 import NewOrder from './pages/NewOrder';
 import OrderDetail from './pages/OrderDetail';
 import Suppliers from './pages/Suppliers';
+import Sync from './pages/Sync';
 
 function App() {
   return (
@@ -29,6 +30,10 @@ function App() {
               <Truck size={20} className="icon" />
               <span>Proveedores</span>
             </NavLink>
+            <NavLink to="/sync" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
+              <RefreshCw size={20} className="icon" />
+              <span>Sincronización</span>
+            </NavLink>
           </nav>
         </aside>
         <main className="main-content">
@@ -38,6 +43,7 @@ function App() {
             <Route path="/new-order" element={<NewOrder />} />
             <Route path="/orders/:id" element={<OrderDetail />} />
             <Route path="/suppliers" element={<Suppliers />} />
+            <Route path="/sync" element={<Sync />} />
           </Routes>
         </main>
       </div>
