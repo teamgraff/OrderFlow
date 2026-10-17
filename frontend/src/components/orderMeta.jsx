@@ -10,6 +10,13 @@ export function formatDateTime(value) {
   return d.toLocaleString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
+/** Solo la fecha (sin hora), en hora local. */
+export function formatDate(value) {
+  if (!value) return '—';
+  const d = new Date(String(value).replace(' ', 'T') + (String(value).includes('Z') ? '' : 'Z'));
+  return Number.isNaN(d.getTime()) ? value : d.toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' });
+}
+
 const PROCESSING = {
   ok: { label: 'Importada', class: 'badge-green', title: 'Importada desde Teamgraff y procesada correctamente' },
   incompleta: { label: 'Incompleta', class: 'badge-yellow', title: 'Faltan datos: requiere revisión' },

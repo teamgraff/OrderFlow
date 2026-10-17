@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Save, Trash2, CheckCircle, RefreshCw } from 'lucide-react';
 import { api } from '../api/client';
-import { formatOf, formatDateTime, ProcessingBadge } from '../components/orderMeta';
+import { formatOf, formatDate, ProcessingBadge } from '../components/orderMeta';
+import PurchaseEmail from '../components/PurchaseEmail';
 
 const STATUS_MAP = {
   green: { label: 'Terminado', class: 'badge-green' },
@@ -83,7 +84,6 @@ export default function OrderDetail() {
   if (!order) return <div className="empty-state"><h3>Orden no encontrada</h3></div>;
 
   const vs = STATUS_MAP[order.visual_status] || STATUS_MAP.pending;
-  const formatMoney = (v) => '$' + Number(v || 0).toLocaleString('es-CL');
 
   return (
     <div className="animate-fade-up">
@@ -130,7 +130,7 @@ export default function OrderDetail() {
           </div>
           <div className="form-row">
             <div className="form-group"><label className="form-label">Correo</label><div>{order.contact_email || '—'}</div></div>
-            <div className="form-group"><label className="form-label">Origen</label><div>{order.source === 'sync' ? `Importada automáticamente el ${formatDateTime(order.imported_at || order.created_at)}` : 'Ingreso manual'}</div></div>
+            <div className="form-group"><label className="form-label">Origen</label><div>{order.source === 'sync' ? `Importada automáticamente el ${formatDate(order.imported_at || order.created_at)}` : 'Ingreso manual'}</div></div>
             <div className="form-group"></div>
           </div>
         </div>
@@ -238,30 +238,8 @@ export default function OrderDetail() {
         </div>
       </div>
 
-      {/* Items */}
-      {order.items && order.items.length > 0 && (
-        <div className="card" style={{ marginBottom: '1.5rem' }}>
-          <h3 className="card-title" style={{ marginBottom: '1rem' }}>Productos ({order.items.length}) · {order.items.reduce((a, i) => a + (Number(i.quantity) || 0), 0)} prendas</h3>
-          <div className="table-container">
-            <table className="table">
-              <thead><tr><th>Producto</th><th>SKU</th><th>Color</th><th>Talla</th><th>Cantidad</th><th>Precio Unit.</th>{order.items.some(i => i.logo_position || i.notes) && <><th>Posición logo</th><th>Indicaciones</th></>}</tr></thead>
-              <tbody>
-                {order.items.map((item, i) => (
-                  <tr key={i}>
-                    <td>{item.product_name}</td>
-                    <td style={{ fontFamily: 'monospace' }}>{item.sku}</td>
-                    <td>{item.color}</td>
-                    <td>{item.size || <span style={{ color: '#f59e0b' }} title="Sin talla en la OT">sin talla</span>}</td>
-                    <td>{item.quantity}</td>
-                    <td>{item.unit_price ? formatMoney(item.unit_price) : '—'}</td>
-                    {order.items.some(i => i.logo_position || i.notes) && <><td>{item.logo_position || '—'}{item.logo_size ? ` (${item.logo_size})` : ''}</td><td style={{ whiteSpace: 'normal', maxWidth: 320 }}>{item.notes || '—'}</td></>}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+      {/* Correo de compra */}
+      {order.items && order.items.length > 0 && <PurchaseEmail items={order.items} onCopied={showToast} />}
 
       {/* Email */}
       {order.generated_email && (
