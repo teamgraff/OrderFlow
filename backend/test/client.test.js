@@ -7,6 +7,9 @@ import { detailHtml } from './helpers.js';
 test('Lista blanca: solo login, listado, detalle y el buscador por número', () => {
   assert.doesNotThrow(() => assertAllowed('GET', '/Ordenini/indexOT.php?pagina=3'));
   assert.doesNotThrow(() => assertAllowed('GET', '/Ordenini/imprimirPantalla.php?cotizacion=10807&editar2=10946'));
+  assert.doesNotThrow(() => assertAllowed('GET', '/Ordenini/CotizacionPantalla.php?cotizacion=10946'));
+  assert.throws(() => assertAllowed('GET', '/Ordenini/CotizacionPantalla.php?cotizacion=1&borrar=1'));
+  assert.throws(() => assertAllowed('GET', '/Ordenini/cotizacionOrdenT.php?cotizacion=10625'), /no permitida/);
   assert.doesNotThrow(() => assertAllowed('POST', '/', new URLSearchParams({ usuario: 'u', password: 'p', login: 'Iniciar Sesion' })));
   assert.doesNotThrow(() => assertAllowed('POST', '/Ordenini/indexOT.php', new URLSearchParams({ nombre: '3706', p_submit1: 'Buscar' })));
   // Enlaces del listado que eliminan registros o envían correos:
@@ -48,6 +51,14 @@ test('Detalle: lee cabecera, tallas, notas y avisa líneas sin tallas', () => {
   assert.equal(ot.lines[0].note, 'bordado: logo');
   assert.deepEqual(ot.lines[1].sizes, [{ size: null, qty: 20 }]);
   assert.equal(ot.warnings.length, 1);
+});
+
+test('Cotización: lee N° y "Total Neto" en formato chileno', async () => {
+  const { quoteHtml } = await import('./helpers.js');
+  const { parseQuoteNet } = await import('../src/sync/otParsers.js');
+  assert.deepEqual(parseQuoteNet(quoteHtml({ number: '9946', net: 217280 })), { quoteNumber: '9946', net: 217280 });
+  assert.deepEqual(parseQuoteNet(quoteHtml({ number: '9946', net: null })), { quoteNumber: '9946', net: null });
+  assert.deepEqual(parseQuoteNet('<html>otra página</html>'), { quoteNumber: null, net: null });
 });
 
 test('Codificación mixta UTF-8 / Latin-1 y correos ocultos por Cloudflare', () => {

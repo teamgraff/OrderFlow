@@ -181,3 +181,56 @@ test('Si Teamgraff no responde, el ciclo queda "failed" y no se crea nada', asyn
   assert.equal(orders().length, 0);
   assert.equal(db.queryOne('SELECT status FROM sync_runs ORDER BY id DESC').status, 'failed');
 });
+
+test('Valor neto: se toma el "Total Neto" de la cotización', async () => {
+  tg.add(3711);
+  await sync.runSync();
+  const o = byOt(3711);
+  assert.equal(o.net_value, 103711);
+  assert.equal(o.teamgraff_quote, String(tg.ots.get('3711').ed));
+});
+
+test('Valor neto: sin "Total Neto", cotización equivocada o caída -> la OT se importa igual con neto vacío', async () => {
+  tg.add(3711, { net: null });
+  tg.add(3712, { quoteShown: '1' });
+  tg.add(3713, { failQuote: true });
+  const r = await sync.runSync();
+  assert.equal(r.created, 3);
+  assert.equal(r.failed, 0);
+  for (const ot of [3711, 3712, 3713]) {
+    assert.equal(byOt(ot).net_value, 0);
+    assert.equal(byOt(ot).processing_status, 'ok', 'el neto no marca la orden como incompleta');
+  }
+  assert.match(r.log.join('\n'), /no muestra "Total Neto"/);
+  assert.match(r.log.join('\n'), /no es la/);
+  assert.match(r.log.join('\n'), /no se pudo leer la cotización/);
+});
+
+test('Valor neto: "Reprocesar" lo completa si está vacío y nunca pisa uno ingresado a mano', async () => {
+  tg.add(3711, { failQuote: true }); tg.add(3712);
+  await sync.runSync();
+  db.run('UPDATE orders SET net_value = 555 WHERE teamgraff_ot = ?', ['3712']);
+  tg.ots.get('3711').failQuote = false;
+  await sync.reprocessOrder(byOt(3711).id);
+  await sync.reprocessOrder(byOt(3712).id);
+  assert.equal(byOt(3711).net_value, 103711);
+  assert.equal(byOt(3712).net_value, 555);
+});
+
+test('Valor neto: relleno único de órdenes existentes con neto vacío (sin pisar las que tienen valor)', async () => {
+  tg.add(3500); tg.add(3501); tg.add(3502, { net: 0 });
+  createOrder({ custom_ot: '3500', client_name: 'Manual sin neto' });
+  createOrder({ custom_ot: '3501', client_name: 'Manual con neto', net_value: 777 });
+  createOrder({ custom_ot: '3502', client_name: 'Cotización sin neto' });
+  const r = await sync.runSync();
+  assert.equal(byOt(3500).net_value, 103500);
+  assert.equal(byOt(3500).teamgraff_quote, String(tg.ots.get('3500').ed));
+  assert.equal(byOt(3501).net_value, 777);
+  assert.equal(byOt(3502).net_value, 0);
+  assert.match(r.log.join('\n'), /en 1 de 2 órdenes/);
+  assert.match(r.log.join('\n'), /está en \$0/);
+  // Solo una vez.
+  const before = tg.calls.quote;
+  await sync.runSync();
+  assert.equal(tg.calls.quote, before);
+});

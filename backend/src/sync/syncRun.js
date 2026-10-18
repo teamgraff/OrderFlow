@@ -1,6 +1,6 @@
 import { query, queryOne, run, transaction, getDB, formatOf } from '../database.js';
 import { createOrder, findByOt, insertItems, DuplicateOtError } from '../services/orderStore.js';
-import { parseOtHtml } from './otParsers.js';
+import { parseOtHtml, parseQuoteNet } from './otParsers.js';
 import { mapOtToOrder } from './mapOt.js';
 import { TeamgraffClient } from './teamgraffClient.js';
 
@@ -120,6 +120,7 @@ async function doRunSync({ listPages = 2 } = {}) {
       if (result.created) stats.created++;
       if (result.failed) stats.failed++;
     }
+    await backfillNetValues(client, log);
     if (stats.failed) status = 'with_errors';
   } catch (err) {
     status = 'failed';
@@ -156,11 +157,11 @@ async function processOt(client, ot, row) {
     if (existing) {
       refreshOrder(existing.id, data);
       resolveIssues(ot, existing.id);
-      return { created: false, message: `OT ${ot}: completada (${formatOf(existing.of_number)}).` };
+      return { created: false, message: `OT ${ot}: completada (${formatOf(existing.of_number)})${data.netNote ? `; ${data.netNote}` : ''}.` };
     }
     const order = createOrder(data);
     resolveIssues(ot, order.id);
-    return { created: true, message: `OT ${ot} importada como ${formatOf(order.of_number)}${data.processing_status === 'incompleta' ? ' (incompleta, requiere revisión)' : ''}.` };
+    return { created: true, message: `OT ${ot} importada como ${formatOf(order.of_number)}${data.processing_status === 'incompleta' ? ' (incompleta, requiere revisión)' : ''}${data.netNote ? `; ${data.netNote}` : ''}.` };
   } catch (err) {
     if (err instanceof DuplicateOtError) { resolveIssues(ot); return { message: `OT ${ot}: ya existía.` }; }
     return recordFailure(ot, row, err);
@@ -172,7 +173,28 @@ async function readOt(client, ot, row) {
   if (!row.detail) throw new Error('El listado no trae el enlace al detalle de la OT.');
   const parsed = parseOtHtml(await client.detailHtml(row.detail));
   if (parsed.number !== ot) throw new Error(`El detalle abierto corresponde a la OT ${parsed.number}, no a la ${ot}.`);
-  return mapOtToOrder(parsed, row);
+  const data = mapOtToOrder(parsed, row);
+  const quote = await readQuoteNet(client, parsed.quoteNumber ?? row.detail.editar2);
+  data.net_value = quote.net;
+  data.netNote = quote.note;
+  return data;
+}
+
+/**
+ * "Total Neto" de la cotización (dato secundario): si no se puede leer, la OT se importa igual
+ * con el neto vacío y el motivo queda en el log del ciclo.
+ */
+async function readQuoteNet(client, quoteNumber) {
+  if (!quoteNumber) return { net: null, note: 'sin N° de cotización: valor neto no completado' };
+  try {
+    const q = parseQuoteNet(await client.quoteHtml(quoteNumber));
+    if (q.quoteNumber !== String(quoteNumber)) return { net: null, note: `la cotización abierta no es la ${quoteNumber}: valor neto no completado` };
+    if (q.net === null) return { net: null, note: `la cotización ${quoteNumber} no muestra "Total Neto": valor neto no completado` };
+    if (q.net === 0) return { net: null, note: `la cotización ${quoteNumber} está en $0 (sin cobro): valor neto queda vacío` };
+    return { net: q.net, note: null };
+  } catch (err) {
+    return { net: null, note: `no se pudo leer la cotización ${quoteNumber} (${err.message}): valor neto no completado` };
+  }
 }
 
 /**
@@ -185,9 +207,10 @@ function refreshOrder(orderId, data) {
     getDB().run(
       `UPDATE orders SET client_name = ?, client_rut = ?, contact_name = ?, contact_email = ?, teamgraff_quote = ?,
          quote_date = COALESCE(?, quote_date), logo_technique = COALESCE(logo_technique, ?), notes = COALESCE(notes, ?),
+         net_value = CASE WHEN COALESCE(net_value, 0) = 0 THEN COALESCE(?, net_value) ELSE net_value END,
          processing_status = ?, review_notes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
       [data.client_name, data.client_rut, data.contact_name, data.contact_email, data.teamgraff_quote,
-        data.quote_date, data.logo_technique, data.notes, data.processing_status, data.review_notes, orderId]
+        data.quote_date, data.logo_technique, data.notes, data.net_value ?? null, data.processing_status, data.review_notes, orderId]
     );
     getDB().run('DELETE FROM order_items WHERE order_id = ?', [orderId]);
     insertItems(orderId, data.items);
@@ -226,6 +249,30 @@ function recordFailure(ot, row, err) {
   });
   console.error(`⚠️ [sync] OT ${ot}: ${err.message}`);
   return { failed: true, message: `OT ${ot}: error (intento ${attempts}/${MAX_ATTEMPTS}): ${err.message}` };
+}
+
+/**
+ * Relleno ÚNICO del valor neto de las órdenes existentes que lo tienen vacío (desde su cotización).
+ * Nunca pisa un valor ya ingresado. Se marca como hecho al terminar; si el ciclo se corta, se repite.
+ */
+async function backfillNetValues(client, log) {
+  if (queryOne(`SELECT value FROM counters WHERE name = 'net_backfill_done'`)) return;
+  const pending = query(`SELECT id, teamgraff_ot, teamgraff_quote FROM orders WHERE COALESCE(net_value, 0) = 0 AND teamgraff_ot IS NOT NULL ORDER BY id`);
+  let filled = 0;
+  for (const o of pending) {
+    let quoteNumber = o.teamgraff_quote;
+    if (!quoteNumber) quoteNumber = (await client.findOt(o.teamgraff_ot))?.detail?.editar2 ?? null;
+    const { net, note } = await readQuoteNet(client, quoteNumber);
+    if (net) {
+      run(`UPDATE orders SET net_value = ?, teamgraff_quote = COALESCE(teamgraff_quote, ?), updated_at = CURRENT_TIMESTAMP
+           WHERE id = ? AND COALESCE(net_value, 0) = 0`, [net, quoteNumber, o.id]);
+      filled++;
+    } else {
+      log.push(`OT ${o.teamgraff_ot}: ${note}.`);
+    }
+  }
+  run(`INSERT INTO counters (name, value) VALUES ('net_backfill_done', 1)`);
+  log.push(`Valor neto completado desde la cotización en ${filled} de ${pending.length} órdenes existentes que lo tenían vacío.`);
 }
 
 /** Un número saltado que todavía no aparece en Teamgraff: se vigila unos días y luego se cierra. */

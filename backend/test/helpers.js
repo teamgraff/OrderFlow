@@ -38,6 +38,20 @@ export function detailHtml({ number, quote = '9000', empresa = '76.123.456-7 EMP
   </table></body></html>`;
 }
 
+/** Cotización en pantalla (CotizacionPantalla.php) con la estructura real; net = null omite "Total Neto". */
+export function quoteHtml({ number, net }) {
+  const money = (n) => `$ ${Number(n).toLocaleString('es-CL')}`;
+  return `<html><body><form name="formul" method="post"><table>
+    <tr><th colspan="3"><div align="center">N&deg;COTIZACION</div></th></tr>
+    <tr><th><div align="center"> ${number} </div></th></tr></table>
+    <table><tr><th><div align="center">Fecha:17-10-2026</div></th></tr></table>
+    <table width="310" border="1" align="right">
+      <tr><td>Subtotal</td><td align="right">${money(net ?? 1)} <div align="right"></div></td></tr>
+      ${net === null ? '' : `<tr><td>Total Neto </td><td align="right">${money(net)} <div align="right"></div></td></tr>`}
+      <tr><td>Impuesto</td><td align="right">${money(Math.round((net ?? 1) * 0.19))}</td></tr>
+    </table></form></body></html>`;
+}
+
 /** Listado / resultado de búsqueda (indexOT.php) con las columnas reales. */
 export function listHtml(rows, { page = 1, totalPages = 1 } = {}) {
   const tr = rows.map((r) => `<tr><td></td><td></td><td></td><td></td><td>x</td><td></td><td></td>
@@ -57,7 +71,7 @@ export function listHtml(rows, { page = 1, totalPages = 1 } = {}) {
  */
 export function fakeTeamgraff() {
   const ots = new Map();
-  const calls = { list: 0, find: 0, detail: 0 };
+  const calls = { list: 0, find: 0, detail: 0, quote: 0 };
   const listRows = () => [...ots.entries()]
     .map(([number, o]) => ({ number, ...o }))
     .sort((a, b) => b.cot - a.cot);
@@ -80,13 +94,20 @@ export function fakeTeamgraff() {
       if (o.failDetail > 0) { o.failDetail--; throw new Error('app-teamgraff.com respondió 500 en /Ordenini/imprimirPantalla.php'); }
       return o.html;
     },
+    async quoteHtml(n) {
+      calls.quote++;
+      const o = [...ots.values()].find((x) => String(x.ed) === String(n));
+      if (!o) throw new Error('404');
+      if (o.failQuote) throw new Error('app-teamgraff.com respondió 500 en /Ordenini/CotizacionPantalla.php');
+      return quoteHtml({ number: o.quoteShown ?? n, net: o.net });
+    },
   };
   let nextCot = 20000;
   const add = (number, { client: c = `Cliente ${number}`, lines, cot, ...rest } = {}) => {
     const n = String(number);
     const q = cot ?? nextCot++;
     ots.set(n, {
-      client: c, cot: q, ed: q + 100,
+      client: c, cot: q, ed: q + 100, net: 100000 + Number(number),
       html: detailHtml({ number: n, quote: String(q + 100), empresa: `76.000.${String(number).padStart(3, '0').slice(-3)}-5 ${c}`, lines: lines ?? [{ article: 'Polera Pique', qty: 10, color: 'Azul', pos: 'Frente izquierdo', sizes: [[6, 'M'], [4, 'L']], note: 'bordado: logo cliente' }] }),
       ...rest,
     });

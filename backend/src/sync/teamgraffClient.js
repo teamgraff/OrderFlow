@@ -4,7 +4,7 @@ import { decodeMixedEncoding, parseOtListHtml } from './otParsers.js';
  * Cliente de SOLO LECTURA para app-teamgraff.com (no tiene API).
  *
  * Reglas de seguridad (no relajar):
- * - Solo se abren el listado de OT, el detalle de una OT y la portada (login).
+ * - Solo se abren el listado de OT, el detalle de una OT, la cotización en pantalla (solo lectura) y la portada (login).
  *   El listado y el detalle tienen enlaces que al abrirse ELIMINAN registros o ENVÍAN
  *   correos: cualquier ruta fuera de la lista blanca se rechaza aquí.
  * - Solo dos POST permitidos: el formulario de inicio de sesión y el buscador
@@ -18,6 +18,7 @@ const ALLOWED_GET = [
   /^\/admin\.php$/,
   /^\/Ordenini\/indexOT\.php(\?pagina=\d+)?$/,
   /^\/Ordenini\/imprimirPantalla\.php\?cotizacion=\d+&editar2=\d+$/,
+  /^\/Ordenini\/CotizacionPantalla\.php\?cotizacion=\d+$/,
 ];
 const MIN_INTERVAL_MS = 1000;
 const USER_AGENT = 'TeamgraffOrderflow/1.0 (sincronizacion de solo lectura)';
@@ -57,6 +58,12 @@ export class TeamgraffClient {
   async detailHtml(ref) {
     if (!/^\d+$/.test(ref?.cotizacion ?? '') || !/^\d+$/.test(ref?.editar2 ?? '')) throw new Error('Referencia de OT inválida.');
     return this.page('GET', `/Ordenini/imprimirPantalla.php?cotizacion=${ref.cotizacion}&editar2=${ref.editar2}`);
+  }
+
+  /** Cotización en pantalla (solo muestra; su único botón es imprimir). Recibe el N° de cotización. */
+  async quoteHtml(quoteNumber) {
+    if (!/^\d+$/.test(String(quoteNumber ?? ''))) throw new Error('N° de cotización inválido.');
+    return this.page('GET', `/Ordenini/CotizacionPantalla.php?cotizacion=${quoteNumber}`);
   }
 
   /** Pide una página permitida; si la sesión expiró, vuelve a entrar una vez. */

@@ -214,3 +214,19 @@ export function parseOtListHtml(html) {
     totalRecords: Number(/de\s+(\d+)\s+registros/i.exec(nav)?.[1]) || null,
   };
 }
+
+/**
+ * Cotización en pantalla (Ordenini/CotizacionPantalla.php?cotizacion=N°): devuelve el N° de cotización y el
+ * "Total Neto" (sin IVA; puede ser 0 en tallajes o reposiciones). Si no hay exactamente un "Total Neto" legible,
+ * net = null (no se inventa).
+ * @returns {{ quoteNumber: string|null, net: number|null }}
+ */
+export function parseQuoteNet(html) {
+  const $ = cheerio.load(html);
+  const quoteNumber = /N°\s*COTIZACI[OÓ]N\s+(\d+)/i.exec(clean($('body').text()))?.[1] ?? null;
+  const cells = $('td').filter((_, td) => /^Total Neto$/i.test(clean($(td).text())));
+  if (cells.length !== 1) return { quoteNumber, net: null };
+  const m = /^\$?\s*([\d.]+)(?:,\d+)?\s*\.?-?$/.exec(clean(cells.first().next('td').text()));
+  const net = m ? Number(m[1].replace(/\./g, '')) : NaN;
+  return { quoteNumber, net: Number.isFinite(net) ? net : null };
+}

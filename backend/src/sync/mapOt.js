@@ -4,7 +4,8 @@
  *
  * No se inventa nada: lo que no viene en la OT queda vacío y, si es relevante,
  * la orden queda como "incompleta" con el motivo en review_notes.
- * Precio, SKU, valor neto, fecha de pago y proveedor no vienen en la OT: se completan a mano, como hoy.
+ * Precio, SKU, fecha de pago y proveedor no vienen en la OT: se completan a mano, como hoy.
+ * El valor neto se toma aparte, de la cotización (syncRun.readQuoteNet).
  */
 
 export function mapOtToOrder(ot, listed = null) {

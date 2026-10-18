@@ -33,6 +33,10 @@ usaría una persona (`backend/src/sync/`).
   páginas del listado como red de seguridad.
 - **Lectura:** se abre el detalle de la OT (`imprimirPantalla.php`, el mismo documento que antes se imprimía
   a PDF y se subía a mano) y se crea la orden con una fila por talla, posición de logo e indicaciones.
+- **Valor neto:** se toma el "Total Neto" (sin IVA) de la cotización en pantalla
+  (`CotizacionPantalla.php?cotizacion=<N° cotización>`, página de solo lectura). Solo se completa si el campo está
+  vacío: nunca reemplaza un valor ingresado a mano. Si la cotización no se puede leer o está en $0, la OT se importa
+  igual con el neto vacío. Al activarse por primera vez rellena una sola vez las órdenes existentes con neto vacío.
 - **Seguridad:** el cliente tiene una lista blanca de páginas (`teamgraffClient.js`). Varias acciones del
   listado eliminan registros o envían correos al abrirse: nunca se abren. Máximo 1 petición por segundo.
 - **Sin duplicados:** el N° de OT es único en la base (`orders.teamgraff_ot`). Una OT ya existente —importada
